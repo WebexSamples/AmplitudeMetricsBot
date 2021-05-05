@@ -3,6 +3,8 @@ import requests
 import json
 from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 updateFrequencyEnum = {"daily" : 0, "weekly" : 1, "monthly" : 2}
@@ -21,7 +23,7 @@ def getErrorPlot(errorCode, updateFrequency):
     print(HTTPString)
     response_json = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1])).json()
     df = pd.DataFrame(response_json['data']['series'], columns = response_json['data']['xValues']).transpose().rename(columns = {0: errorCode})
-    print(df)
+    # print(df)
 
     # Plotting the data with custom specifications
     ax = df.plot(kind='bar')
@@ -33,6 +35,9 @@ def getErrorPlot(errorCode, updateFrequency):
     for rect, label in zip(rects, labels):
         height = rect.get_height()
         ax.text(rect.get_x() + rect.get_width() / 2, height + 0.5, label, ha='center', va='bottom')
-    plt.show()
+    plt.savefig('plot.png', dpi=300, bbox_inches='tight')
+    # plt.show()
 
-getErrorPlot("client_ecm_add_account_funnel", "weekly")
+    return df
+
+# getErrorPlot("client_ecm_add_account_funnel", "weekly")
