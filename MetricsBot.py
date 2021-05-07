@@ -1,8 +1,13 @@
 # Bot module
 
 from python_webex.v1.Bot import Bot
-bot_url = "http://5e0d4beb8bc2.ngrok.io"
+from requests_toolbelt.multipart.encoder import MultipartEncoder
+import requests
+bot_url = "http://36c4b04f0ac0.eu.ngrok.io"
 
+keyFile = open(r'./.secret/api_keys.txt','r')
+keys = keyFile.read().split('\n')
+auth_token = keys[3]    
 
 class MetricsBotClass(Bot):
     def permute(self, input_string):
@@ -41,3 +46,13 @@ metricsBot.create_webhook(
 def default_response(room_id=None):
     return metricsBot.send_message(room_id=room_id, text="Sorry, could not understand that.\nType help to know about supported commands")
 
+
+@metricsBot.set_default_file_response()
+def respond_file(files = None, room_id = None):
+    print("Files: ",files)
+    response = requests.get(files[0],
+                  headers={'Authorization': 'Bearer '+auth_token})
+    filename = response.headers['Content-Disposition'].split('"')[1::1][0]
+    message = metricsBot.send_message(room_id=room_id, text= "File named " + filename +" received")
+    with open(filename, "wb") as newFile:
+        newFile.write(response.content)
