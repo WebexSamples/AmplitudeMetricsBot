@@ -5,6 +5,10 @@ from MetricsBot import metricsBot
 import general_cmd
 import help_cmd
 import EventCard
+import ChooseProjectCard
+import ConfigCard
+import EventCard2
+import EventCard3
 
 webhook.bot = metricsBot
 
