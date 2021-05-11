@@ -1,0 +1,51 @@
+{
+  "type": "metricsBotConfig",
+  "body": {
+    "measures": "uniques",
+    "chart_type": "bar",
+    "interval": "daily",
+    "interval_range": "7d",
+    "repeat": "t/f",
+    "repeat_interval": "daily/weekly/monthly",
+    "events": [
+      {
+        "event_type": "client_ecm_add_account_funnel",
+        "filters": [
+          {
+            "subprop_type": "event",
+            "subprop_key": "pageloadstatus",
+            "subprop_op": "is",
+            "subprop_value": [
+              "loaded"
+            ]
+          }
+        ],
+        "group_by": [
+          {
+            "type": "event",
+            "value": "platform"
+          }
+        ]
+      },
+      {
+        "event_type": "client_ecm_file_share_funnel",
+        "filters": [
+          {
+            "subprop_type": "event",
+            "subprop_key": "platform",
+            "subprop_op": "is",
+            "subprop_value": [
+              "Windows OS"
+            ]
+          }
+        ],
+        "group_by": [
+          {
+            "type": "event",
+            "value": "ecm_provider"
+          }
+        ]
+      }
+    ]
+  }
+}
