@@ -2,11 +2,11 @@
   "type": "metricsBotConfig",
   "body": {
     "measures": "uniques",
-    "chart_type": "bar",
+    "chart_type": "stacked bar",
     "interval": "daily",
     "interval_range": "7d",
-    "repeat": "t/f",
-    "repeat_interval": "daily/weekly/monthly",
+    "repeat": "f",
+    "repeat_interval": "daily",
     "events": [
       {
         "event_type": "client_ecm_add_account_funnel",
