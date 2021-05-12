@@ -1,13 +1,13 @@
 from MyCard import MyCard
 from python_webex.v1.Card import Card
 from MetricsBot import metricsBot
-from AmplitudeInteraction import getErrorPlot
+from AmplitudeInteraction import getErrorPlots
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 import requests
 
 keyFile = open(r'./.secret/api_keys.txt','r')
 keys = keyFile.read().split('\n')
-auth_token = keys[3]    
+auth_token = keys[2]
 
 # eventCard = Card()
 eventCard = MyCard()

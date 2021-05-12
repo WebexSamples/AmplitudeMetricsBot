@@ -14,6 +14,7 @@ keys = keyFile.read().split('\n')
 def getErrorPlots(inputJsonFileName):
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
+    plotName = inputJsonFileName[:-5] + 'plot.png'
     chartType = inputJson['body']['chart_type']
     errors = inputJson['body']['events']
     dfList = []
@@ -35,7 +36,10 @@ def getErrorPlots(inputJsonFileName):
 
     for i in range(len(errors)):
         HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[i]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric).replace("'", '"')
-        response_json = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1])).json()
+        response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
+        if str(response) != '<Response [200]>':
+            return 'API call Failed'
+        response_json = response.json()
         tempDF = pd.DataFrame(response_json['data']['series'], columns = response_json['data']['xValues']).transpose()
         if not (tempDF.empty):
             if (response_json['data']['seriesLabels'] != [0]):
@@ -79,7 +83,8 @@ def getErrorPlots(inputJsonFileName):
     plt.ylabel(inputJson['body']['measures'].title())
     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5),
        fancybox=True, shadow=True, ncol=1)
-    plt.savefig('plot.png', dpi=300, bbox_inches='tight')
+    plt.savefig(plotName, dpi=300, bbox_inches='tight')
+    return plotName
 
 def autolabelbar(rects, ax, stacked=False):
     # Get y-axis height to calculate label position from.
