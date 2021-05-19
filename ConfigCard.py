@@ -1,6 +1,4 @@
 from MyCard import MyCard
-from python_webex.v1.Card import Card
-from MetricsBot import metricsBot 
 
 configCard = MyCard()
 configCard.add_text_block(
@@ -38,16 +36,3 @@ configCard.add_input_choiceset(
 configCard.add_submit_action_btn(
     title="Configure Bot"
 )
-
-@metricsBot.listen("Configure Bot")
-def send_basic_card(room_id=None):
-    message = metricsBot.send_card(card=configCard, room_id=room_id)
-    message_id = message.json()['id']
-
-    @metricsBot.attachment_response(message_id=message_id)
-    def respond_to_card(msg):
-        print(msg)
-        metricsBot.send_message(
-            room_id=room_id, text="The bot has been configured.\nTo reconfigure, type command \"Configure bot\" again"
-        )
-        metricsBot.delete_message(message_id=message_id)
