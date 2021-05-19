@@ -100,13 +100,22 @@ def respond_to_file(files= None, room_id= None, message = None):
         return
     filename = response.headers['Content-Disposition'].split('"')[1::1][0]
     message = metricsBot.send_message(room_id=room_id, text= "File named " + filename +" received")
-    encodedMessage = MultipartEncoder({'roomId': room_id,
+    isValidRoom = checkUsers(room_id)
+    if isValidRoom:
+        encodedMessage = MultipartEncoder({'roomId': room_id,
                     'text': 'You will receive response if the Input is correct',
+                    'parentId':message.json()['id']})
+    else:
+        encodedMessage = MultipartEncoder({'roomId': room_id,
+                    'text': 'Some of the users in this space are not allowed access to this data',
                     'parentId':message.json()['id']})
 
     r = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
                     headers={'Authorization': 'Bearer ' + auth_token,
                     'Content-Type': encodedMessage.content_type})
+    if not isValidRoom:
+        return
+    
     jsonname = room_id + response.headers['Content-Disposition'].split('"')[1::1][0]
     with open(jsonname, "wb") as newFile:
         newFile.write(response.content)
@@ -171,6 +180,16 @@ def plotMessage(roomid, plotName, text, parentid):
     r = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
                     headers={'Authorization': 'Bearer ' + auth_token,
                     'Content-Type': encodedMessage.content_type})
+
+def checkUsers(room_id):
+    memberURL = "https://webexapis.com/v1/memberships?roomId="
+    response = requests.get(memberURL + room_id, 
+                headers={'Authorization': 'Bearer '+auth_token})
+    itemList = response.json()['items']
+    for item in itemList:
+        if item['personEmail'] not in permittedUsers:
+            return False
+    return True
 
 def greet_back(room_id=None):
     return metricsBot.send_message(room_id=room_id, text="Hi, this is the Webex Metrics bot.\nYou can type help to get more info")
