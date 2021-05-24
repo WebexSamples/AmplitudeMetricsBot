@@ -133,11 +133,7 @@ def CheckAlertStatus(inputJsonFileName):
     for threshold in thresholds:
         for n in range(len(operators)):
             if operators[n] in threshold:
-                expr = threshold.split(operators[n])
-                if expr[1][0] == ' ':
-                    expr[1] = expr[1].lstrip()
-                if expr[0][-1] == ' ':
-                    expr[0] = expr[0].rstrip()
+                expr = [ i.strip() for i in threshold.split(operators[n])]
                 print(expr, valuesDict, threshold)
                 eval = cexprtk.evaluate_expression(expr[0], valuesDict)
                 if eval <= int(expr[1]) and n == 0:
