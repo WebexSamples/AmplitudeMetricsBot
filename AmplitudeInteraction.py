@@ -93,6 +93,7 @@ def getErrorPlots(inputJsonFileName):
     plt.ylabel(inputJson['body']['measures'].title())
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2),
            fancybox=True, shadow=True, ncol=5)
+    plt.title('Plot for ' + inputJsonFileName)
     plt.savefig(plotName, dpi=300, bbox_inches='tight')
     plt.close(fig)
     return plotName
