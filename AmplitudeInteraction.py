@@ -7,19 +7,20 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
+import cexprtk
 iValues = {"daily" : '1', "weekly" : '7', "monthly" : '30', "hourly" : '-3600000', "realtime" : '-300000'}
 measures = {'uniques' : 'uniques', 'event totals' : 'totals', 'active %' : 'pct_dau', 'average' : 'average'}
 keyFile = open(r'./.secret/api_keys.txt','r')
+operators = ['<=', '>=', '=', '<', '>']
 keys = keyFile.read().split('\n')
-def getErrorPlots(inputJsonFileName):
+
+def getDFList(inputJsonFileName):
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
-    plotName = inputJsonFileName[:-5] + 'plot.png'
-    chartType = inputJson['body']['chart_type']
     errors = inputJson['body']['events']
-    dfList = []
     interval = iValues[inputJson['body']['interval']]
     metric = measures[inputJson['body']['measures']]
+    dfList = []
     endDate = str(datetime.now().date()).replace('-','')
     if (interval == '-3600000' or interval == '-300000'):
         startDate = endDate
@@ -53,7 +54,15 @@ def getErrorPlots(inputJsonFileName):
             else:
                 tempDF = tempDF.rename(columns = lambda x: errors[i]['event_type'])
             dfList.append(tempDF)
+    return dfList
 
+def getErrorPlots(inputJsonFileName):
+    with open(inputJsonFileName) as f:
+        inputJson = json.load(f)
+    plotName = inputJsonFileName[:-5] + 'plot.png'
+    chartType = inputJson['body']['chart_type']
+    dfList = []
+    dfList = getDFList(inputJsonFileName)
     df = pd.DataFrame()
     for i in dfList:
         if df.empty:
@@ -62,6 +71,7 @@ def getErrorPlots(inputJsonFileName):
             df = df.join(i)
 
     fig, ax = plt.subplots()
+    plt.style.use('fivethirtyeight')
     plt.rcParams['font.size'] = '8'
     sns.set_style('whitegrid')
     if chartType in ['bar', 'line']:
@@ -81,20 +91,64 @@ def getErrorPlots(inputJsonFileName):
     ax.figure.autofmt_xdate()
     plt.xlabel('Dates')
     plt.ylabel(inputJson['body']['measures'].title())
-    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5),
-       fancybox=True, shadow=True, ncol=1)
+    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2),
+           fancybox=True, shadow=True, ncol=5)
     plt.savefig(plotName, dpi=300, bbox_inches='tight')
+    plt.close(fig)
     return plotName
 
 def autolabelbar(rects, ax, stacked=False):
     # Get y-axis height to calculate label position from.
     (y_bottom, y_top) = ax.get_ylim()
     y_height = y_top - y_bottom
+    ylabels = list(plt.yticks())[0]
+    diff = (ylabels[1] - ylabels[0]) * 0.4
     for rect in rects:
         height = rect.get_height()
-        label_position = rect.get_y() + height / 2 if stacked else height + (y_height * 0.01)
-        if height:
+        label_position = ((rect.get_y() + height / 2) - 0.35) if stacked else height + (y_height * 0.01)
+        if height > diff:
             t = ax.text(rect.get_x() + rect.get_width()/2., label_position,
                 str(int(height)),
                 ha='center', va='bottom', in_layout=True, alpha=0.7)
-getErrorPlots('input.json')
+            t.set_wrap(True)
+
+def CheckAlertStatus(inputJsonFileName):
+    with open(inputJsonFileName) as f:
+        inputJson = json.load(f)
+    if inputJson['body']['alerts'] == 'f':
+        return
+    dfList = getDFList(inputJsonFileName)
+    valuesDict = {}
+    thresholds = inputJson['body']['thresholds']
+    df = pd.DataFrame()
+    for i in dfList:
+        if df.empty:
+            df = i
+        else:
+            df = df.join(i)
+    temp = 65
+    for i in df.columns:
+        valuesDict[chr(temp)] = df[i][-1]
+        temp = temp + 1
+    for threshold in thresholds:
+        for n in range(len(operators)):
+            if operators[n] in threshold:
+                expr = threshold.split(operators[n])
+                if expr[1][0] == ' ':
+                    expr[1] = expr[1].lstrip()
+                if expr[0][-1] == ' ':
+                    expr[0] = expr[0].rstrip()
+                print(expr, valuesDict, threshold)
+                eval = cexprtk.evaluate_expression(expr[0], valuesDict)
+                if eval <= int(expr[1]) and n == 0:
+                    return (True, threshold)
+                elif eval >= int(expr[1]) and n == 1:
+                    return (True, threshold)
+                elif eval == int(expr[1]) and n == 2:
+                    return (True, threshold)
+                elif eval < int(expr[1]) and n == 3:
+                    return (True, threshold)
+                elif eval > int(expr[1]) and n == 4:
+                    return (True, threshold)
+                break
+    return [False]
