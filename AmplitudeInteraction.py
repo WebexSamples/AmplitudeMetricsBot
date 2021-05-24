@@ -8,6 +8,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import cexprtk
+import os
 iValues = {"daily" : '1', "weekly" : '7', "monthly" : '30', "hourly" : '-3600000', "realtime" : '-300000'}
 measures = {'uniques' : 'uniques', 'event totals' : 'totals', 'active %' : 'pct_dau', 'average' : 'average'}
 keyFile = open(r'./.secret/api_keys.txt','r')
@@ -71,9 +72,13 @@ def getErrorPlots(inputJsonFileName):
             df = df.join(i)
 
     fig, ax = plt.subplots()
+    xlabel = '' if (':' in df.index[0]) else 'Dates'
     plt.style.use('fivethirtyeight')
+    csfont = {'fontname':'Futura'}
+    palette = ['#540D6E', '#EE4266', '#FFD23F', '#1F271B', '#F0F0F0']
+    plt.rcParams["font.family"] = csfont['fontname']
     plt.rcParams['font.size'] = '8'
-    sns.set_style('whitegrid')
+    # sns.set_style('ticks')
     if chartType in ['bar', 'line']:
         if chartType == 'line':
             ax = df.plot(kind='line', marker='o')
@@ -82,17 +87,20 @@ def getErrorPlots(inputJsonFileName):
             rects = ax.patches
             autolabelbar(rects, ax, False)
     elif chartType == 'stacked bar':
-        ax = df.plot.bar(stacked=True)
+        ax = df.plot.bar(stacked=True, color=palette)
         rects = ax.patches
         autolabelbar(rects, ax, True)
     elif chartType == 'stacked area':
         ax = df.plot.area(alpha=0.5)
-    ax.grid(alpha=0.2, b=True)
+    ax.grid(alpha=0.2, b=True, axis='y')
+    ax.grid(alpha=0, b=True, axis='x')
+    plt.tick_params(left = False, bottom = False)
+    sns.despine(left=True, bottom=True)
     ax.figure.autofmt_xdate()
-    plt.xlabel('Dates')
-    plt.ylabel(inputJson['body']['measures'].title())
+    plt.xlabel(xlabel, **csfont)
+    plt.ylabel(inputJson['body']['measures'].title(), **csfont)
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2),
-           fancybox=True, shadow=True, ncol=5)
+           fancybox=True, ncol=5)
     plt.title('Plot for ' + inputJsonFileName)
     plt.savefig(plotName, dpi=300, bbox_inches='tight')
     plt.close(fig)
@@ -149,3 +157,4 @@ def CheckAlertStatus(inputJsonFileName):
                     return (True, threshold)
                 break
     return [False]
+getErrorPlots('input.Json')
