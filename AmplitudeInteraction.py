@@ -85,15 +85,19 @@ def getErrorPlots(inputJsonFileName):
         else:
             ax = df.plot.bar(color=palette)
             rects = ax.patches
-            autolabelbar(rects, ax, False)
+            print(len(rects))
+            if len(rects) <= 30:
+                autolabelbar(rects, ax, False)
     elif chartType == 'stacked bar':
         ax = df.plot.bar(stacked=True, color=palette)
         rects = ax.patches
-        autolabelbar(rects, ax, True)
+        if len(df.index) <= 20:
+            autolabelbar(rects, ax, True)
     elif chartType == 'stacked area':
         ax = df.plot.area(alpha=0.5, color=palette)
     if plt.xticks()[0][-1] > 19 and chartType not in ['stacked area', 'line']:
         xticksList = []
+        print('Inside IF')
         for i in range(0, int(plt.xticks()[0][-1]) + 1):
             if i % int(len(plt.xticks()[0]) / 7) == 0:
                 xticksList.append(df.index[i])
