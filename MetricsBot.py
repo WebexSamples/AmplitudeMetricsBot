@@ -7,6 +7,12 @@ from AmplitudeInteraction import getErrorPlots
 import schedule
 import json
 import time
+import pymongo
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.jobstores.mongodb import MongoDBJobStore
+import atexit
+from bson.objectid import ObjectId
 
 from ChooseProjectCard import chooseProjectCard
 from ConfigCard import configCard
@@ -14,16 +20,29 @@ from EventCard import eventCard
 from EventCard2 import eventCard2
 from EventCard3 import eventCard3
 
-bot_url = "http://0b894d0717d7.eu.ngrok.io"
+bot_url = "http://3e9552294fc3.eu.ngrok.io"
 
 with open(r'./.secret/api_keys.txt','r') as keyFile:
     keys = keyFile.read().split('\n')
     auth_token = keys[2]
+    dbPass = keys[4]
 
 with open(r'./.secret/permittedUsers.txt', 'r') as userFile:
     permittedUsers = userFile.read().split('\n')
 
 frequency = {'daily' : 1, 'weekly' : 7, 'monthly' : 30}
+
+
+client = pymongo.MongoClient("mongodb+srv://mukuagar:" + dbPass + "@metricsbotcluster.hpx9t.mongodb.net/test?retryWrites=true&w=majority")
+
+db = client.test
+
+jobstores = {
+    'default': MongoDBJobStore(database = "test", collection = "jobs", client= client)
+}
+sched = BackgroundScheduler(jobstores=jobstores)
+sched.start()
+atexit.register(lambda: sched.shutdown())
 
 class MetricsBotClass(Bot):
     def permute(self, input_string):
@@ -75,6 +94,8 @@ def default_response(room_id=None, message = None):
         return send_two_events_card(room_id=room_id)
     elif tempText == "three events":
         return send_three_events_card(room_id=room_id)
+    elif "cancel" in tempText:
+        return cancel_job(tempText, room_id= room_id)
     else:
         return metricsBot.send_message(room_id=room_id, text="Sorry, could not understand that.\nType help to know about supported commands")
 
@@ -130,7 +151,7 @@ def respond_to_file(files= None, room_id= None, message = None):
     else:
         with open(jsonname) as f:
             inputJson = json.load(f)
-        freq = frequency[inputJson['body']['repeat_interval']]
+        # freq = frequency[inputJson['body']['repeat_interval']]
         errorstrings = [i for i in inputJson['body']['events']]
         outString = ''
         for i in errorstrings:
@@ -148,6 +169,7 @@ def respond_to_file(files= None, room_id= None, message = None):
         id = room_id
         pid = message.json()['id']
         if inputJson['body']['repeat'] == 't':
+            add_to_db(room_id=room_id, inputJson=inputJson, filename= jsonname)
             return
             # SCHEDULE CODE
         else:
@@ -278,3 +300,81 @@ def send_three_events_card(room_id=None):
                         headers={'Authorization': 'Bearer ' + auth_token,
                         'Content-Type': encodedMessage.content_type})
         metricsBot.delete_message(message_id=message_id)
+
+def respond_with_alert(filename=None, room_id = None, objectId = None):
+    message = metricsBot.send_message(room_id=room_id, text= "Here is your scheduled update")
+    isValidRoom = checkUsers(room_id)
+    if not isValidRoom:
+        encodedMessage = MultipartEncoder({'roomId': room_id,
+                    'text': 'Some of the users in this space are not allowed access to this data',
+                    'parentId':message.json()['id']})
+
+        r = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
+                    headers={'Authorization': 'Bearer ' + auth_token,
+                    'Content-Type': encodedMessage.content_type})
+        return
+    
+    resultPlot = getErrorPlots(filename)
+    if resultPlot == 'API call Failed':
+        encodedMessage = MultipartEncoder({'roomId': room_id,
+                        'text': 'API call error occurred, please re-check the input JSON',
+                        'parentId':message.json()['id']})
+        r = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
+                        headers={'Authorization': 'Bearer ' + auth_token,
+                        'Content-Type': encodedMessage.content_type})
+    else:
+        with open(filename) as f:
+            inputJson = json.load(f)
+        # freq = frequency[inputJson['body']['repeat_interval']]
+        errorstrings = [i for i in inputJson['body']['events']]
+        outString = ''
+        for i in errorstrings:
+            filters = ''
+            for j in i['filters']:
+                filters = filters + j['subprop_key'] + ' ' + j['subprop_op'] + ' ' + str(j['subprop_value']) + ', '
+            filters = filters.rstrip(', ')
+            groupby = ''
+            for j in i['group_by']:
+                groupby = groupby + j['value'] + ', '
+            groupby = groupby.rstrip(', ')
+            outString = outString + '-  ' + i['event_type'] + '; ' + 'where: ' + filters + '; ' + 'grouped by: ' + groupby
+            outString = outString + '\n'
+        textString = "Ola! here's your update for the errors:\n" + outString
+        id = room_id
+        pid = message.json()['id']
+        plotMessage(id, resultPlot, textString, pid)
+        query = db.things.find_one({"_id": ObjectId(objectId)}, {"jobID": 1})
+        print("Query: \n",query['jobID'])
+        encodedMessage = MultipartEncoder({'roomId': room_id,
+                        'text': 'To stop futher Updates, Please Type \n"Cancel ' + query['jobID'] + '"',
+                        'parentId':message.json()['id']})
+        r = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
+                        headers={'Authorization': 'Bearer ' + auth_token,
+                        'Content-Type': encodedMessage.content_type})
+
+
+def add_to_db(room_id=None, inputJson = None, filename = None):
+    dataDict = {"roomID": room_id, "inputJson": inputJson}
+    result = db.things.insert_one(dataDict)
+    response = callScheduler(objectId= result.inserted_id, filename = filename)
+    if response == 0:
+        metricsBot.send_message(room_id=room_id, text = "Json contains errors in repeat_interval field")
+
+def callScheduler(objectId: None, filename = None):
+    print("Object is: ",objectId)
+    query = db.things.find_one({"_id": ObjectId(objectId)})
+    print("The query is: \n",query['inputJson'])
+    interval = query['inputJson']['body']['repeat_interval'].lower()
+    try:
+        jobID = sched.add_job(respond_with_alert,CronTrigger.from_crontab(interval, timezone='UTC') ,args=(filename,query['roomID'], objectId), misfire_grace_time= 30, jitter = 10)
+    except ValueError:
+        return 0
+    db.things.update({"_id": ObjectId(objectId)}, {"$set": {"jobID": jobID.id}})
+    return jobID
+
+def cancel_job(message: None, room_id= None):
+    print("Cancelling job with ID: ",message.split()[-1].strip())
+    jobID = message.split()[-1].strip()
+    db.jobs.delete_one({"_id": jobID})
+    metricsBot.send_message(room_id=room_id, text=" You will receive no furter updates regarding Job " + jobID)
+    return
