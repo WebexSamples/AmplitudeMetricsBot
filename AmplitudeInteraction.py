@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 import cexprtk
-import os
 iValues = {"daily" : '1', "weekly" : '7', "monthly" : '30', "hourly" : '-3600000', "realtime" : '-300000'}
 measures = {'uniques' : 'uniques', 'event totals' : 'totals', 'active %' : 'pct_dau', 'average' : 'average'}
 keyFile = open(r'./.secret/api_keys.txt','r')
@@ -75,24 +75,33 @@ def getErrorPlots(inputJsonFileName):
     xlabel = '' if (':' in df.index[0]) else 'Dates'
     plt.style.use('fivethirtyeight')
     csfont = {'fontname':'Futura'}
-    palette = ['#540D6E', '#EE4266', '#FFD23F', '#1F271B', '#F0F0F0']
+    palette = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#808080', '#f0f0f0']
     plt.rcParams["font.family"] = csfont['fontname']
     plt.rcParams['font.size'] = '8'
     # sns.set_style('ticks')
     if chartType in ['bar', 'line']:
         if chartType == 'line':
-            ax = df.plot(kind='line', marker='o')
+            ax = df.plot.line(marker='o', color=palette, linewidth=2, markersize=2)
         else:
-            ax = df.plot(kind='bar', width=0.75)
+            ax = df.plot.bar(color=palette)
             rects = ax.patches
-            autolabelbar(rects, ax, False)
+            if len(rects) <= 30:
+                autolabelbar(rects, ax, False)
     elif chartType == 'stacked bar':
         ax = df.plot.bar(stacked=True, color=palette)
         rects = ax.patches
-        autolabelbar(rects, ax, True)
+        if len(df.index) <= 20:
+            autolabelbar(rects, ax, True)
     elif chartType == 'stacked area':
-        ax = df.plot.area(alpha=0.5)
-    ax.grid(alpha=0.2, b=True, axis='y')
+        ax = df.plot.area(alpha=0.5, color=palette)
+    if plt.xticks()[0][-1] > 19 and chartType not in ['stacked area', 'line']:
+        xticksList = []
+        for i in range(0, int(plt.xticks()[0][-1]) + 1):
+            if i % int(len(plt.xticks()[0]) / 7) == 0:
+                xticksList.append(df.index[i])
+            else:
+                xticksList.append('')
+        plt.xticks(np.arange(len(xticksList)), xticksList)
     ax.grid(alpha=0, b=True, axis='x')
     plt.tick_params(left = False, bottom = False)
     sns.despine(left=True, bottom=True)
@@ -102,7 +111,7 @@ def getErrorPlots(inputJsonFileName):
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2),
            fancybox=True, ncol=5)
     plt.title('Plot for ' + inputJsonFileName)
-    plt.savefig(plotName, dpi=300, bbox_inches='tight')
+    plt.savefig(plotName, dpi=600, bbox_inches='tight')
     plt.close(fig)
     return plotName
 
@@ -114,8 +123,8 @@ def autolabelbar(rects, ax, stacked=False):
     diff = (ylabels[1] - ylabels[0]) * 0.4
     for rect in rects:
         height = rect.get_height()
-        label_position = ((rect.get_y() + height / 2) - 0.35) if stacked else height + (y_height * 0.01)
-        if height > diff:
+        label_position = ((rect.get_y() + height / 2) - 1) if stacked else height + (y_height * 0.01)
+        if height:
             t = ax.text(rect.get_x() + rect.get_width()/2., label_position,
                 str(int(height)),
                 ha='center', va='bottom', in_layout=True, alpha=0.7)
@@ -143,7 +152,6 @@ def CheckAlertStatus(inputJsonFileName):
         for n in range(len(operators)):
             if operators[n] in threshold:
                 expr = [ i.strip() for i in threshold.split(operators[n])]
-                print(expr, valuesDict, threshold)
                 eval = cexprtk.evaluate_expression(expr[0], valuesDict)
                 if eval <= int(expr[1]) and n == 0:
                     return (True, threshold)
@@ -156,5 +164,4 @@ def CheckAlertStatus(inputJsonFileName):
                 elif eval > int(expr[1]) and n == 4:
                     return (True, threshold)
                 break
-    return [False]
 getErrorPlots('input.Json')

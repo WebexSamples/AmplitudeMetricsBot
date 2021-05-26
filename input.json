@@ -2,9 +2,9 @@
   "type": "metricsBotConfig",
   "body": {
     "measures": "uniques",
-    "chart_type": "stacked bar",
+    "chart_type": "bar",
     "interval": "daily",
-    "interval_range": "7d",
+    "interval_range": "10d",
     "repeat": "f",
     "repeat_interval": "daily",
     "alerts": "t",
