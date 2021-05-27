@@ -4,7 +4,6 @@ from python_webex.v1.Bot import Bot
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 import requests
 from AmplitudeInteraction import getErrorPlots
-import schedule
 import json
 import time
 import pymongo
@@ -13,6 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.mongodb import MongoDBJobStore
 import atexit
 from bson.objectid import ObjectId
+import os
 
 from ChooseProjectCard import chooseProjectCard
 from ConfigCard import configCard
@@ -27,8 +27,6 @@ with open(r'./.secret/api_keys.txt','r') as keyFile:
     auth_token = keys[2]
     dbPass = keys[4]
 
-with open(r'./.secret/permittedUsers.txt', 'r') as userFile:
-    permittedUsers = userFile.read().split('\n')
 
 frequency = {'daily' : 1, 'weekly' : 7, 'monthly' : 30}
 
@@ -96,6 +94,8 @@ def default_response(room_id=None, message = None):
         return send_three_events_card(room_id=room_id)
     elif "cancel" in tempText:
         return cancel_job(tempText, room_id= room_id)
+    elif "add user" in tempText:
+        return add_user(tempText, room_id = room_id, message = message)
     else:
         return metricsBot.send_message(room_id=room_id, text="Sorry, could not understand that.\nType help to know about supported commands")
 
@@ -106,7 +106,7 @@ def respond_file(files = None, room_id = None, message = None):
 
 
 @metricsBot.set_file_action(message_text="*")
-def respond_file(files = None, room_id = None, message = None):
+def respond_file_spaces(files = None, room_id = None, message = None):
     respond_to_file(files=files, room_id= room_id, message= message)
 
 
@@ -122,32 +122,18 @@ def respond_to_file(files= None, room_id= None, message = None):
     filename = response.headers['Content-Disposition'].split('"')[1::1][0]
     message = metricsBot.send_message(room_id=room_id, text= "File named " + filename +" received")
     isValidRoom = checkUsers(room_id)
-    if isValidRoom:
-        encodedMessage = MultipartEncoder({'roomId': room_id,
-                    'text': 'You will receive response if the Input is correct',
-                    'parentId':message.json()['id']})
-    else:
-        encodedMessage = MultipartEncoder({'roomId': room_id,
-                    'text': 'Some of the users in this space are not allowed access to this data',
-                    'parentId':message.json()['id']})
-
-    r = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
-                    headers={'Authorization': 'Bearer ' + auth_token,
-                    'Content-Type': encodedMessage.content_type})
     if not isValidRoom:
+        reply_message(room_id=room_id, message= message.json(), reply='Some of the users in this space are not allowed access to this data')
         return
+        
+    reply_message(room_id=room_id, message= message.json(), reply='You will receive response if the Input is correct')
     
     jsonname = room_id + response.headers['Content-Disposition'].split('"')[1::1][0]
     with open(jsonname, "wb") as newFile:
         newFile.write(response.content)
     resultPlot = getErrorPlots(jsonname)
     if resultPlot == 'API call Failed':
-        encodedMessage = MultipartEncoder({'roomId': room_id,
-                        'text': 'API call error occurred, please re-check the input JSON',
-                        'parentId':message.json()['id']})
-        r = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
-                        headers={'Authorization': 'Bearer ' + auth_token,
-                        'Content-Type': encodedMessage.content_type})
+        reply_message(room_id=room_id, message= message.json(), reply='API call error occurred, please re-check the input JSON')
     else:
         with open(jsonname) as f:
             inputJson = json.load(f)
@@ -173,6 +159,7 @@ def respond_to_file(files= None, room_id= None, message = None):
             return
             # SCHEDULE CODE
         else:
+            os.remove(jsonname)
             plotMessage(id, resultPlot, textString, pid)
 
 def help_user(room_id=None):
@@ -209,7 +196,7 @@ def checkUsers(room_id):
                 headers={'Authorization': 'Bearer '+auth_token})
     itemList = response.json()['items']
     for item in itemList:
-        if item['personEmail'] not in permittedUsers:
+        if db.users.count_documents({ 'email': item['personEmail']}, limit = 1) == 0:
             return False
     return True
 
@@ -305,23 +292,14 @@ def respond_with_alert(filename=None, room_id = None, objectId = None):
     message = metricsBot.send_message(room_id=room_id, text= "Here is your scheduled update")
     isValidRoom = checkUsers(room_id)
     if not isValidRoom:
-        encodedMessage = MultipartEncoder({'roomId': room_id,
-                    'text': 'Some of the users in this space are not allowed access to this data',
-                    'parentId':message.json()['id']})
-
-        r = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
-                    headers={'Authorization': 'Bearer ' + auth_token,
-                    'Content-Type': encodedMessage.content_type})
+        reply_message(room_id=room_id, message= message.json(), reply='Some of the users in this space are not allowed access to this data')
         return
+
+    reply_message(room_id=room_id, message= message.json(), reply='You will receive response if the Input is correct')
     
     resultPlot = getErrorPlots(filename)
     if resultPlot == 'API call Failed':
-        encodedMessage = MultipartEncoder({'roomId': room_id,
-                        'text': 'API call error occurred, please re-check the input JSON',
-                        'parentId':message.json()['id']})
-        r = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
-                        headers={'Authorization': 'Bearer ' + auth_token,
-                        'Content-Type': encodedMessage.content_type})
+        reply_message(room_id=room_id, message= message.json(), reply='API call error occurred, please re-check the input JSON')
     else:
         with open(filename) as f:
             inputJson = json.load(f)
@@ -345,13 +323,7 @@ def respond_with_alert(filename=None, room_id = None, objectId = None):
         plotMessage(id, resultPlot, textString, pid)
         query = db.things.find_one({"_id": ObjectId(objectId)}, {"jobID": 1})
         print("Query: \n",query['jobID'])
-        encodedMessage = MultipartEncoder({'roomId': room_id,
-                        'text': 'To stop futher Updates, Please Type \n"Cancel ' + query['jobID'] + '"',
-                        'parentId':message.json()['id']})
-        r = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
-                        headers={'Authorization': 'Bearer ' + auth_token,
-                        'Content-Type': encodedMessage.content_type})
-
+        reply_message(room_id=room_id, message=message.json(), reply= 'To stop futher Updates, Please Type \n"Cancel ' + query['jobID'] + '"')
 
 def add_to_db(room_id=None, inputJson = None, filename = None):
     dataDict = {"roomID": room_id, "inputJson": inputJson}
@@ -378,3 +350,25 @@ def cancel_job(message: None, room_id= None):
     db.jobs.delete_one({"_id": jobID})
     metricsBot.send_message(room_id=room_id, text=" You will receive no furter updates regarding Job " + jobID)
     return
+
+def add_user(textMessage, room_id= None, message = None):
+    print(message['personEmail'],"Email to add")
+    print("Textmessge is", textMessage.split()[-1].strip())
+    new_user = textMessage.split()[-1].strip()
+    if db.users.count_documents({ 'email': message['personEmail'] }, limit = 1) != 0:
+        if db.users.count_documents({ 'email': new_user}, limit = 1) != 0:
+            reply_message(room_id=room_id, message= message, reply="The user "+ new_user + " already has access to the bot commands")
+        else:
+            db.users.insert_one({'email': new_user})
+            reply_message(room_id=room_id, message= message, reply="The user "+ new_user + " has been added")
+    else:
+        reply_message(room_id=room_id, message= message, reply="You do not have permission to add users")
+
+def reply_message(room_id = None, message= None, reply = None):
+    encodedMessage = MultipartEncoder({'roomId': room_id,
+                        'text': reply,
+                        'parentId':message['id']})
+    response = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
+                        headers={'Authorization': 'Bearer ' + auth_token,
+                        'Content-Type': encodedMessage.content_type})
+    return response
