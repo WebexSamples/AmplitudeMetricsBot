@@ -65,6 +65,8 @@ def getErrorPlots(inputJsonFileName):
     dfList = []
     dfList = getDFList(inputJsonFileName)
     df = pd.DataFrame()
+    if dfList == 'API call Failed':
+        return 'API call Failed'
     for i in dfList:
         if df.empty:
             df = i
@@ -81,7 +83,7 @@ def getErrorPlots(inputJsonFileName):
     # sns.set_style('ticks')
     if chartType in ['bar', 'line']:
         if chartType == 'line':
-            ax = df.plot.line(marker='o', color=palette, linewidth=2, markersize=2)
+            ax = df.plot.line(marker='o', color=palette, linewidth=1, markersize=1)
         else:
             ax = df.plot.bar(color=palette)
             rects = ax.patches
@@ -139,6 +141,9 @@ def CheckAlertStatus(inputJsonFileName):
     valuesDict = {}
     thresholds = inputJson['body']['thresholds']
     df = pd.DataFrame()
+    thresholdsTriggered = []
+    if i == 'API call Failed':
+        return 'API call Failed'
     for i in dfList:
         if df.empty:
             df = i
@@ -153,15 +158,16 @@ def CheckAlertStatus(inputJsonFileName):
             if operators[n] in threshold:
                 expr = [ i.strip() for i in threshold.split(operators[n])]
                 eval = cexprtk.evaluate_expression(expr[0], valuesDict)
+                print(eval)
                 if eval <= int(expr[1]) and n == 0:
-                    return (True, threshold)
+                    thresholdsTriggered.append((threshold, eval))
                 elif eval >= int(expr[1]) and n == 1:
-                    return (True, threshold)
+                    thresholdsTriggered.append((threshold, eval))
                 elif eval == int(expr[1]) and n == 2:
-                    return (True, threshold)
+                    thresholdsTriggered.append((threshold, eval))
                 elif eval < int(expr[1]) and n == 3:
-                    return (True, threshold)
+                    thresholdsTriggered.append((threshold, eval))
                 elif eval > int(expr[1]) and n == 4:
-                    return (True, threshold)
+                    thresholdsTriggered.append((threshold, eval))
                 break
-getErrorPlots('input.Json')
+    return thresholdsTriggered

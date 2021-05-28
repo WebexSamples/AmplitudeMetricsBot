@@ -4,7 +4,7 @@
     "measures": "uniques",
     "chart_type": "bar",
     "interval": "daily",
-    "interval_range": "10d",
+    "interval_range": "21d",
     "repeat": "f",
     "repeat_interval": "daily",
     "alerts": "t",
@@ -13,12 +13,12 @@
         "event_type": "client_ecm_add_account_funnel"
       },
       {
-        "event_type": "client_ecm_file_share_funnel"
+        "event_type": "client_ecm_file_share_funne"
       }
     ],
     "thresholds": [
       "A + B >= 60",
-      "A - B < 70"
+      "A - B > 70"
     ]
   }
 }
