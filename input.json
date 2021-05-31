@@ -7,7 +7,7 @@
     "interval_range": "10d",
     "repeat": "f",
     "repeat_interval": "daily",
-    "alerts": "t",
+    "alerts": true,
     "events": [
       {
         "event_type": "client_ecm_add_account_funnel"
