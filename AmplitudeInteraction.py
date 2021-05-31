@@ -133,12 +133,13 @@ def autolabelbar(rects, ax, stacked=False):
 def CheckAlertStatus(inputJsonFileName):
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
-    if inputJson['body']['alerts'] == 'f':
+    if inputJson['body']['alerts'] == False:
         return
     dfList = getDFList(inputJsonFileName)
     valuesDict = {}
     thresholds = inputJson['body']['thresholds']
     df = pd.DataFrame()
+    thresholdsTriggered = []
     for i in dfList:
         if df.empty:
             df = i
@@ -153,15 +154,17 @@ def CheckAlertStatus(inputJsonFileName):
             if operators[n] in threshold:
                 expr = [ i.strip() for i in threshold.split(operators[n])]
                 eval = cexprtk.evaluate_expression(expr[0], valuesDict)
+                # print(eval)
                 if eval <= int(expr[1]) and n == 0:
-                    return (True, threshold)
+                    thresholdsTriggered.append((threshold, eval))
                 elif eval >= int(expr[1]) and n == 1:
-                    return (True, threshold)
+                    thresholdsTriggered.append((threshold, eval))
                 elif eval == int(expr[1]) and n == 2:
-                    return (True, threshold)
+                    thresholdsTriggered.append((threshold, eval))
                 elif eval < int(expr[1]) and n == 3:
-                    return (True, threshold)
+                    thresholdsTriggered.append((threshold, eval))
                 elif eval > int(expr[1]) and n == 4:
-                    return (True, threshold)
+                    thresholdsTriggered.append((threshold, eval))
                 break
+    return thresholdsTriggered
 getErrorPlots('input.Json')

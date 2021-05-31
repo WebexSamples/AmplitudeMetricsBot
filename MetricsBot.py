@@ -3,16 +3,16 @@
 from python_webex.v1.Bot import Bot
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 import requests
-from AmplitudeInteraction import getErrorPlots
+from AmplitudeInteraction import getErrorPlots, CheckAlertStatus
 import json
 import time
 import pymongo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.mongodb import MongoDBJobStore
+from apscheduler.executors.pool import ThreadPoolExecutor
 import atexit
 from bson.objectid import ObjectId
-import os
 
 from ChooseProjectCard import chooseProjectCard
 from ConfigCard import configCard
@@ -20,16 +20,12 @@ from EventCard import eventCard
 from EventCard2 import eventCard2
 from EventCard3 import eventCard3
 
-bot_url = "http://3e9552294fc3.eu.ngrok.io"
+bot_url = "http://f0df72e08966.eu.ngrok.io"
 
 with open(r'./.secret/api_keys.txt','r') as keyFile:
     keys = keyFile.read().split('\n')
     auth_token = keys[2]
     dbPass = keys[4]
-
-
-frequency = {'daily' : 1, 'weekly' : 7, 'monthly' : 30}
-
 
 client = pymongo.MongoClient("mongodb+srv://mukuagar:" + dbPass + "@metricsbotcluster.hpx9t.mongodb.net/test?retryWrites=true&w=majority")
 
@@ -38,7 +34,14 @@ db = client.test
 jobstores = {
     'default': MongoDBJobStore(database = "test", collection = "jobs", client= client)
 }
-sched = BackgroundScheduler(jobstores=jobstores)
+executors = {
+    'default': ThreadPoolExecutor(5)
+}
+job_defaults = {
+    'coalesce': False,
+    'max_instances': 3
+}
+sched = BackgroundScheduler(jobstores=jobstores, executors= executors, job_defaults= job_defaults)
 sched.start()
 atexit.register(lambda: sched.shutdown())
 
@@ -77,25 +80,25 @@ metricsBot.create_webhook(
 @metricsBot.on_hears("*")
 def default_response(room_id=None, message = None):
     print("The Message is :", message['text'].replace('TestBot', '').strip())
-    tempText = message['text'].replace('TestBot', '').strip().lower()
-    if tempText == 'help':
+    messageText = message['text'].replace('TestBot', '').strip().lower()
+    if messageText == 'help':
         return help_user(room_id=room_id)
-    elif tempText == "hi":
-        return greet_back(room_id=room_id)
-    elif tempText == "choose project":
+    elif messageText == "sample json":
+        return send_sample_json(room_id = room_id)
+    elif messageText == "choose project":
         return send_choose_project_card(room_id=room_id)
-    elif tempText == "configure bot":
+    elif messageText == "configure bot":
         return send_config_card(room_id=room_id)
-    elif tempText == "single event":
+    elif messageText == "single event":
         return send_single_event_card(room_id=room_id)
-    elif tempText == "two events":
+    elif messageText == "two events":
         return send_two_events_card(room_id=room_id)
-    elif tempText == "three events":
+    elif messageText == "three events":
         return send_three_events_card(room_id=room_id)
-    elif "cancel" in tempText:
-        return cancel_job(tempText, room_id= room_id)
-    elif "add user" in tempText:
-        return add_user(tempText, room_id = room_id, message = message)
+    elif "cancel" in messageText:
+        return cancel_job(messageText, room_id= room_id, message=message)
+    elif "add user" in messageText:
+        return add_user(messageText, room_id = room_id, message = message)
     else:
         return metricsBot.send_message(room_id=room_id, text="Sorry, could not understand that.\nType help to know about supported commands")
 
@@ -120,20 +123,20 @@ def respond_to_file(files= None, room_id= None, message = None):
         metricsBot.send_message(room_id=room_id, text= "Metrics Bot can only support files of json Format")
         return
     filename = response.headers['Content-Disposition'].split('"')[1::1][0]
-    message = metricsBot.send_message(room_id=room_id, text= "File named " + filename +" received")
+    messageSent = metricsBot.send_message(room_id=room_id, text= "File named " + filename +" received")
     isValidRoom = checkUsers(room_id)
     if not isValidRoom:
-        reply_message(room_id=room_id, message= message.json(), reply='Some of the users in this space are not allowed access to this data')
+        reply_message(room_id=room_id, message= messageSent.json(), reply='Some of the users in this space are not allowed access to this data')
         return
         
-    reply_message(room_id=room_id, message= message.json(), reply='You will receive response if the Input is correct')
+    reply_message(room_id=room_id, message= messageSent.json(), reply='You will receive response if the Input is correct')
     
     jsonname = room_id + response.headers['Content-Disposition'].split('"')[1::1][0]
     with open(jsonname, "wb") as newFile:
         newFile.write(response.content)
     resultPlot = getErrorPlots(jsonname)
     if resultPlot == 'API call Failed':
-        reply_message(room_id=room_id, message= message.json(), reply='API call error occurred, please re-check the input JSON')
+        reply_message(room_id=room_id, message= messageSent.json(), reply='API call error occurred, please re-check the input JSON')
     else:
         with open(jsonname) as f:
             inputJson = json.load(f)
@@ -142,25 +145,30 @@ def respond_to_file(files= None, room_id= None, message = None):
         outString = ''
         for i in errorstrings:
             filters = ''
-            for j in i['filters']:
-                filters = filters + j['subprop_key'] + ' ' + j['subprop_op'] + ' ' + str(j['subprop_value']) + ', '
-            filters = filters.rstrip(', ')
+            if 'filters' in i:
+                for j in i['filters']:
+                    filters = filters + j['subprop_key'] + ' ' + j['subprop_op'] + ' ' + str(j['subprop_value']) + ', '
+                filters = filters.rstrip(', ')
             groupby = ''
-            for j in i['group_by']:
-                groupby = groupby + j['value'] + ', '
-            groupby = groupby.rstrip(', ')
-            outString = outString + '-  ' + i['event_type'] + '; ' + 'where: ' + filters + '; ' + 'grouped by: ' + groupby
+            if 'group_by' in i:
+                for j in i['group_by']:
+                    groupby = groupby + j['value'] + ', '
+                groupby = groupby.rstrip(', ')
+            outString = outString + '-  ' + i['event_type']
+            if 'filters' in i:
+                outString += '; ' + 'where: ' + filters
+            if 'group_by' in i:
+                outString += '; ' + 'grouped by: ' + groupby
             outString = outString + '\n'
         textString = "Ola! here's your update for the errors:\n" + outString
         id = room_id
-        pid = message.json()['id']
-        if inputJson['body']['repeat'] == 't':
-            add_to_db(room_id=room_id, inputJson=inputJson, filename= jsonname)
-            return
-            # SCHEDULE CODE
-        else:
-            os.remove(jsonname)
-            plotMessage(id, resultPlot, textString, pid)
+        pid = messageSent.json()['id']
+        plotMessage(id, resultPlot, textString, pid)
+        if inputJson['body']['repeat'] == True:
+            add_to_db(room_id=room_id, inputJson=inputJson, filename= jsonname, messageSender = message['personEmail'], isRepeat= True)
+        if inputJson['body']['alerts'] == True and len(inputJson['body']['thresholds']) > 0:
+            add_to_db(room_id=room_id, inputJson=inputJson, filename= jsonname, messageSender = message['personEmail'], isRepeat= False)
+            
 
 def help_user(room_id=None):
     messageString = """
@@ -169,14 +177,9 @@ Help
 This is the list of available commands
 
 help - Show this help
-hi - Greet the user
-choose project - Select between the supported Amplitude Projects.
-configure bot - Create the configuration the bot will follow
-single event - Query for a single Event
-two events - Query for 2 Events
-three events - Query for 3 events
+Sample Json - Sends a Sample Json which can be edited and send back to the bot
 
-Or you can directly send a json configured as an attatchment
+The json can be configured to make one time request or set up alerts on a regular basis or even send an alert when certain error thresholds are met.
     """
     return metricsBot.send_message(room_id=room_id, text=messageString)
 
@@ -200,8 +203,6 @@ def checkUsers(room_id):
             return False
     return True
 
-def greet_back(room_id=None):
-    return metricsBot.send_message(room_id=room_id, text="Hi, this is the Webex Metrics bot.\nYou can type help to get more info")
 
 def send_choose_project_card(room_id=None):
     message = metricsBot.send_card(card=chooseProjectCard, room_id=room_id)
@@ -288,7 +289,7 @@ def send_three_events_card(room_id=None):
                         'Content-Type': encodedMessage.content_type})
         metricsBot.delete_message(message_id=message_id)
 
-def respond_with_alert(filename=None, room_id = None, objectId = None):
+def repeat_response(filename=None, room_id = None, objectId = None):
     message = metricsBot.send_message(room_id=room_id, text= "Here is your scheduled update")
     isValidRoom = checkUsers(room_id)
     if not isValidRoom:
@@ -308,14 +309,20 @@ def respond_with_alert(filename=None, room_id = None, objectId = None):
         outString = ''
         for i in errorstrings:
             filters = ''
-            for j in i['filters']:
-                filters = filters + j['subprop_key'] + ' ' + j['subprop_op'] + ' ' + str(j['subprop_value']) + ', '
-            filters = filters.rstrip(', ')
+            if 'filters' in i:
+                for j in i['filters']:
+                    filters = filters + j['subprop_key'] + ' ' + j['subprop_op'] + ' ' + str(j['subprop_value']) + ', '
+                filters = filters.rstrip(', ')
             groupby = ''
-            for j in i['group_by']:
-                groupby = groupby + j['value'] + ', '
-            groupby = groupby.rstrip(', ')
-            outString = outString + '-  ' + i['event_type'] + '; ' + 'where: ' + filters + '; ' + 'grouped by: ' + groupby
+            if 'group_by' in i:
+                for j in i['group_by']:
+                    groupby = groupby + j['value'] + ', '
+                groupby = groupby.rstrip(', ')
+            outString = outString + '-  ' + i['event_type']
+            if 'filters' in i:
+                outString += '; ' + 'where: ' + filters
+            if 'group_by' in i:
+                outString += '; ' + 'grouped by: ' + groupby
             outString = outString + '\n'
         textString = "Ola! here's your update for the errors:\n" + outString
         id = room_id
@@ -325,31 +332,38 @@ def respond_with_alert(filename=None, room_id = None, objectId = None):
         print("Query: \n",query['jobID'])
         reply_message(room_id=room_id, message=message.json(), reply= 'To stop futher Updates, Please Type \n"Cancel ' + query['jobID'] + '"')
 
-def add_to_db(room_id=None, inputJson = None, filename = None):
+def add_to_db(room_id=None, inputJson = None, filename = None, messageSender = None, isRepeat = None):
     dataDict = {"roomID": room_id, "inputJson": inputJson}
     result = db.things.insert_one(dataDict)
-    response = callScheduler(objectId= result.inserted_id, filename = filename)
-    if response == 0:
-        metricsBot.send_message(room_id=room_id, text = "Json contains errors in repeat_interval field")
+    if isRepeat:
+        response = call_repeat_scheduler(objectId= result.inserted_id, filename = filename, messageSender = messageSender)
+        if response == 0:
+            metricsBot.send_message(room_id=room_id, text = "Json contains errors in repeat_interval field")
+    else:
+        response = call_alert_scheduler(objectId= result.inserted_id, filename = filename, messageSender = messageSender, inputJson = inputJson)
 
-def callScheduler(objectId: None, filename = None):
+def call_repeat_scheduler(objectId: None, filename = None, messageSender = None):
     print("Object is: ",objectId)
     query = db.things.find_one({"_id": ObjectId(objectId)})
     print("The query is: \n",query['inputJson'])
     interval = query['inputJson']['body']['repeat_interval'].lower()
     try:
-        jobID = sched.add_job(respond_with_alert,CronTrigger.from_crontab(interval, timezone='UTC') ,args=(filename,query['roomID'], objectId), misfire_grace_time= 30, jitter = 10)
+        jobID = sched.add_job(repeat_response,CronTrigger.from_crontab(interval, timezone='UTC') ,args=(filename,query['roomID'], objectId), misfire_grace_time= 300, jitter = 100)
     except ValueError:
         return 0
     db.things.update({"_id": ObjectId(objectId)}, {"$set": {"jobID": jobID.id}})
+    db.jobs.update({'_id': jobID.id}, {"$set": {"jobOwner": messageSender}})
     return jobID
 
-def cancel_job(message: None, room_id= None):
-    print("Cancelling job with ID: ",message.split()[-1].strip())
-    jobID = message.split()[-1].strip()
-    db.jobs.delete_one({"_id": jobID})
-    metricsBot.send_message(room_id=room_id, text=" You will receive no furter updates regarding Job " + jobID)
-    return
+def cancel_job(jobDetails: None, room_id= None, message = None):
+    jobID = jobDetails.split()[-1].strip()
+    jobDoc = db.jobs.find_one({'_id': jobID})
+    if jobDoc['jobOwner'] == message['personEmail']:
+        db.jobs.delete_one({"_id": jobID})
+        metricsBot.send_message(room_id=room_id, text=" You will receive no furter updates regarding Job " + jobID)
+    else:
+        metricsBot.send_message(room_id=room_id, text="Only "+ jobDoc['jobOwner'] + " is allowed to remove job " + jobID)
+    
 
 def add_user(textMessage, room_id= None, message = None):
     print(message['personEmail'],"Email to add")
@@ -368,6 +382,89 @@ def reply_message(room_id = None, message= None, reply = None):
     encodedMessage = MultipartEncoder({'roomId': room_id,
                         'text': reply,
                         'parentId':message['id']})
+    response = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
+                        headers={'Authorization': 'Bearer ' + auth_token,
+                        'Content-Type': encodedMessage.content_type})
+    return response
+
+def call_alert_scheduler(objectId: None, filename = None, messageSender = None, inputJson = None):
+    query = db.things.find_one({"_id": ObjectId(objectId)})
+    interval = "*/1 * * * *"
+    try:
+        jobID = sched.add_job(alert_response,CronTrigger.from_crontab(interval, timezone='UTC') ,args=(filename,query['roomID'], objectId, inputJson), misfire_grace_time= 180, jitter = 60)
+    except ValueError:
+        return 0
+    db.things.update({"_id": ObjectId(objectId)}, {"$set": {"jobID": jobID.id}})
+    db.jobs.update({'_id': jobID.id}, {"$set": {"jobOwner": messageSender}})
+    return jobID
+
+def alert_response(filename = None, room_id = None, objectId = None, inputJson = None):
+    responses = CheckAlertStatus(filename)
+    if len(responses) > 0:
+        isValidRoom = checkUsers(room_id)
+        if not isValidRoom:
+            reply_message(room_id=room_id, message= message.json(), reply='Some of the users in this space are not allowed access to this data')
+            return
+        messageThread = send_markdown(room_id= room_id, markdown_text = "# Alert")
+        for response in responses:
+            thresholdString = ""
+            for char in response[0]:
+                char = char.upper()
+                if ord(char) >=65 and ord(char) <= 90:
+                    thresholdString += inputJson['body']['events'][ord(char) - 65]['event_type']
+                else:
+                    thresholdString += char.upper()
+            print("Threshold \""+ thresholdString + "\" was crossed with value " + str(response[1]))
+            reply_message(room_id=room_id,message= messageThread.json(), reply ="Threshold "+ thresholdString + " was crossed with value " + str(response[1]))
+        
+        resultPlot = getErrorPlots(filename)
+        if resultPlot == 'API call Failed':
+            reply_message(room_id=room_id, message= messageSent.json(), reply='API call error occurred, please re-check the input JSON')
+        else:
+            reply_message(room_id=room_id,message=messageThread.json(), reply ="Here is the graph again!")
+            errorstrings = [i for i in inputJson['body']['events']]
+            outString = ''
+            for i in errorstrings:
+                filters = ''
+                if 'filters' in i:
+                    for j in i['filters']:
+                        filters = filters + j['subprop_key'] + ' ' + j['subprop_op'] + ' ' + str(j['subprop_value']) + ', '
+                    filters = filters.rstrip(', ')
+                groupby = ''
+                if 'group_by' in i:
+                    for j in i['group_by']:
+                        groupby = groupby + j['value'] + ', '
+                    groupby = groupby.rstrip(', ')
+                outString = outString + '-  ' + i['event_type']
+                if 'filters' in i:
+                    outString += '; ' + 'where: ' + filters
+                if 'group_by' in i:
+                    outString += '; ' + 'grouped by: ' + groupby
+                outString = outString + '\n'
+            textString = "Ola! here's your update for the errors:\n" + outString
+            plotMessage(roomid = room_id, plotName= resultPlot, text= textString, parentid= messageThread.json()['id'])
+            query = db.things.find_one({"_id": ObjectId(objectId)}, {"jobID": 1})
+            print("Query: \n",query['jobID'])
+            reply_message(room_id=room_id, message=messageThread.json(), reply= 'To stop futher Updates, Please Type \n"Cancel ' + query['jobID'] + '"')
+
+
+def send_markdown(room_id= None, markdown_text = None):
+    encodedMessage = MultipartEncoder({'roomId': room_id,
+                    'markdown': markdown_text})
+    response = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
+                    headers={'Authorization': 'Bearer ' + auth_token,
+                    'Content-Type': encodedMessage.content_type})
+    return response
+
+def send_sample_json(room_id= None):
+    isValidRoom = checkUsers(room_id)
+    if not isValidRoom:
+        reply_message(room_id=room_id, message= message.json(), reply='Some of the users in this space are not allowed access to this data')
+        return
+    encodedMessage = MultipartEncoder({'roomId': room_id,
+                      'text': 'Sample attached',
+                      'files': ('sample.json', open('sample.json', 'rb'),
+                      'file/json')})
     response = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
                         headers={'Authorization': 'Bearer ' + auth_token,
                         'Content-Type': encodedMessage.content_type})
