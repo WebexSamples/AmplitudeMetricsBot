@@ -1,0 +1,84 @@
+{
+    "type": "metricsBotConfig",
+    "body": {
+      "measures": "Uniques/ Event totals/ Active %/ Average/ Frequency/Properties/ Formula",
+      "chart_type": "bar/line/stacked bar/ stacked area",
+      "interval": "realtime/ hourly/ daily/ weekly/ monthly/quarterly",
+      "interval_range": "<an_integer_value>",
+      "repeat": true,
+      "repeat_interval": "daily/weekly/monthly",
+      "alerts": true, 
+      "events": [
+        {
+          "event_type": "Event Name",
+          "filters": [
+            {
+              "subprop_type": "user/event",
+              "subprop_key": "key1",
+              "subprop_op": "is/ is not/ contains/ does not contain/ less/ less or equal/ greater/ greater or equal/ set is/ set is not",
+              "subprop_value": [
+                "value1",
+                "value2"
+              ]
+            },
+            {
+              "subprop_type": "user/event",
+              "subprop_key": "key2",
+              "subprop_op": "is/ is not/ contains/ does not contain/ less/ less or equal/ greater/ greater or equal/ set is/ set is not",
+              "subprop_value": [
+                "value3",
+                "value4"
+              ]
+            }
+          ],
+          "group_by": [
+            {
+              "type": "user/ event",
+              "value": "value to be grouped by"
+            },
+            {
+              "type": "user/ event",
+              "value": "value to be grouped by"
+            }
+          ]
+        },
+        {
+          "event_type": "Event Name",
+          "filters": [
+            {
+              "subprop_type": "user/event",
+              "subprop_key": "key1",
+              "subprop_op": "is/ is not/ contains/ does not contain/ less/ less or equal/ greater/ greater or equal/ set is/ set is not",
+              "subprop_value": [
+                "value1",
+                "value2"
+              ]
+            },
+            {
+              "subprop_type": "user/event",
+              "subprop_key": "key2",
+              "subprop_op": "is/ is not/ contains/ does not contain/ less/ less or equal/ greater/ greater or equal/ set is/ set is not",
+              "subprop_value": [
+                "value3",
+                "value4"
+              ]
+            }
+          ],
+          "group_by": [
+            {
+              "type": "user/ event",
+              "value": "value to be grouped by"
+            },
+            {
+              "type": "user/ event",
+              "value": "value to be grouped by"
+            }
+          ]
+        }
+      ],
+      "thresholds": [
+          "A + B <= 60",
+          "A - B > 70"
+      ]
+    }
+  }

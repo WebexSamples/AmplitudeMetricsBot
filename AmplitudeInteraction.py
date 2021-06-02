@@ -135,7 +135,7 @@ def autolabelbar(rects, ax, stacked=False):
 def CheckAlertStatus(inputJsonFileName):
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
-    if inputJson['body']['alerts'] == 'f':
+    if inputJson['body']['alerts'] == False:
         return
     dfList = getDFList(inputJsonFileName)
     valuesDict = {}
