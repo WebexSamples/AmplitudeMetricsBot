@@ -2,9 +2,10 @@
   "type": "metricsBotConfig",
   "body": {
     "measures": "uniques",
-    "chart_type": "bar",
+    "chart_type": "stacked bar",
     "interval": "daily",
     "interval_range": "10d",
+    "dates_between": "YYYYMMDD - YYYYMMDD",
     "repeat": "f",
     "repeat_interval": "daily",
     "alerts": "t",
@@ -19,6 +20,9 @@
     "thresholds": [
       "A + B >= 60",
       "A - B < 70"
+    ],
+    "formulas": [
+      "AVG(A) - AVG(B)"
     ]
   }
 }

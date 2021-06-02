@@ -1,21 +1,47 @@
+import requests, json, matplotlib, cexprtk, asyncio
 import pandas as pd
-import requests
-import json
 from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
-import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-import cexprtk
+from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
+
 iValues = {"daily" : '1', "weekly" : '7', "monthly" : '30', "hourly" : '-3600000', "realtime" : '-300000'}
 measures = {'uniques' : 'uniques', 'event totals' : 'totals', 'active %' : 'pct_dau', 'average' : 'average'}
+dfList = []
 keyFile = open(r'./.secret/api_keys.txt','r')
 operators = ['<=', '>=', '=', '<', '>']
 keys = keyFile.read().split('\n')
+jsonPlotJobs = []
 
-def getDFList(inputJsonFileName):
+def apiCall(inputJsonFileName, HTTPString, errorString):
+    with open(inputJsonFileName) as f:
+        inputJson = json.load(f)
+    interval = iValues[inputJson['body']['interval']]
+    response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
+    if str(response) != '<Response [200]>':
+        return 'API call Failed'
+    response_json = response.json()
+    tempDF = pd.DataFrame(response_json['data']['series'], columns = response_json['data']['xValues']).transpose()
+    if not (tempDF.empty):
+        if (response_json['data']['seriesLabels'] != [0]):
+            tempDF.columns = [el[1] for el in response_json['data']['seriesLabels']]
+        if interval in ['1','7']:
+            tempDF = tempDF.rename(index = lambda x: x.split('T')[0])
+        else:
+            tempDF = tempDF.rename(index = lambda x: x.split('T')[1])
+        if not (str(tempDF.columns[0]).isdigit()):
+            tempDF = tempDF.rename(columns = lambda x: errorString['event_type'] + ', ' + x)
+        else:
+            tempDF = tempDF.rename(columns = lambda x: errorString['event_type'])
+        dfList.append(tempDF)
+        return tempDF
+
+async def getDFListAsynchronously(inputJsonFileName):
+    global dfList
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
     errors = inputJson['body']['events']
@@ -35,42 +61,39 @@ def getDFList(inputJsonFileName):
             startDate = str((datetime.now() + timedelta(-(int(inputJson['body']['interval_range'][:-1]) * 30) + 1)).date()).replace('-','')
         else:
             startDate = endDate
-
-    for i in range(len(errors)):
-        HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[i]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric).replace("'", '"')
-        response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
-        if str(response) != '<Response [200]>':
-            return 'API call Failed'
-        response_json = response.json()
-        tempDF = pd.DataFrame(response_json['data']['series'], columns = response_json['data']['xValues']).transpose()
-        if not (tempDF.empty):
-            if (response_json['data']['seriesLabels'] != [0]):
-                tempDF.columns = [el[1] for el in response_json['data']['seriesLabels']]
-            if interval in ['1','7']:
-                tempDF = tempDF.rename(index = lambda x: x.split('T')[0])
-            else:
-                tempDF = tempDF.rename(index = lambda x: x.split('T')[1])
-            if not (str(tempDF.columns[0]).isdigit()):
-                tempDF = tempDF.rename(columns = lambda x: errors[i]['event_type'] + ', ' + x)
-            else:
-                tempDF = tempDF.rename(columns = lambda x: errors[i]['event_type'])
-            dfList.append(tempDF)
-    return dfList
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        with requests.Session() as session:
+            loop = asyncio.get_event_loop()
+            tasks = []
+            for i in range(len(errors)):
+                HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[i]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric).replace("'", '"')
+                tasks.append(loop.run_in_executor(
+                    executor,
+                    apiCall,
+                    *(inputJsonFileName, HTTPString, errors[i])
+                ))
+            for response in await asyncio.gather(*tasks):
+                pass
 
 def getErrorPlots(inputJsonFileName):
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
     plotName = inputJsonFileName[:-5] + 'plot.png'
     chartType = inputJson['body']['chart_type']
-    dfList = []
-    dfList = getDFList(inputJsonFileName)
+    loop = asyncio.new_event_loop()
+    # loop = asyncio.get_event_loop()
+    future = asyncio.ensure_future(getDFListAsynchronously("input.json"))
+    loop.run_until_complete(future)
+    tempDF = pd.DataFrame()
     df = pd.DataFrame()
+    errorNames = [event['event_type'] for event in inputJson['body']['events']]
     for i in dfList:
-        if df.empty:
-            df = i
+        if tempDF.empty:
+            tempDF = i
         else:
-            df = df.join(i)
-
+            tempDF = tempDF.join(i)
+    for error in errorNames:
+        df[error] = tempDF[error]
     fig, ax = plt.subplots()
     xlabel = '' if (':' in df.index[0]) else 'Dates'
     plt.style.use('fivethirtyeight')
@@ -91,7 +114,8 @@ def getErrorPlots(inputJsonFileName):
         ax = df.plot.bar(stacked=True, color=palette)
         rects = ax.patches
         if len(df.index) <= 20:
-            autolabelbar(rects, ax, True)
+            ax.bar_label(p1, label_type='center')
+            # autolabelbar(rects, ax, True)
     elif chartType == 'stacked area':
         ax = df.plot.area(alpha=0.5, color=palette)
     if plt.xticks()[0][-1] > 19 and chartType not in ['stacked area', 'line']:
@@ -109,8 +133,8 @@ def getErrorPlots(inputJsonFileName):
     plt.xlabel(xlabel, **csfont)
     plt.ylabel(inputJson['body']['measures'].title(), **csfont)
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2),
-           fancybox=True, ncol=5)
-    plt.title('Plot for ' + inputJsonFileName)
+           fancybox=True, ncol=3)
+    plt.title('')
     plt.savefig(plotName, dpi=600, bbox_inches='tight')
     plt.close(fig)
     return plotName
@@ -123,7 +147,7 @@ def autolabelbar(rects, ax, stacked=False):
     diff = (ylabels[1] - ylabels[0]) * 0.4
     for rect in rects:
         height = rect.get_height()
-        label_position = ((rect.get_y() + height / 2) - 1) if stacked else height + (y_height * 0.01)
+        label_position = ((rect.get_y() + height / 2) - (y_height * 0.01)) if stacked else height + (y_height * 0.01)
         if height:
             t = ax.text(rect.get_x() + rect.get_width()/2., label_position,
                 str(int(height)),
@@ -135,24 +159,27 @@ def CheckAlertStatus(inputJsonFileName):
         inputJson = json.load(f)
     if inputJson['body']['alerts'] == 'f':
         return
-    dfList = getDFList(inputJsonFileName)
+    loop = asyncio.get_event_loop()
+    future = asyncio.ensure_future(getDFListAsynchronously("input.json"))
+    loop.run_until_complete(future)
     valuesDict = {}
     thresholds = inputJson['body']['thresholds']
+    errorNames = [event['event_type'] for event in inputJson['body']['events']]
     df = pd.DataFrame()
-    for i in dfList:
+    for dataframe in dfList:
         if df.empty:
-            df = i
+            df = dataframe
         else:
-            df = df.join(i)
-    temp = 65
-    for i in df.columns:
-        valuesDict[chr(temp)] = df[i][-1]
-        temp = temp + 1
+            df = df.join(dataframe)
+    ascii = 65
+    for error in errorNames:
+        valuesDict[chr(ascii)] = df[error][-1]
+        ascii = ascii + 1
     for threshold in thresholds:
         for n in range(len(operators)):
             if operators[n] in threshold:
-                expr = [ i.strip() for i in threshold.split(operators[n])]
-                eval = cexprtk.evaluate_expression(expr[0], valuesDict)
+                expr = [ threshold.strip() for threshold in threshold.split(operators[n])]
+                eval = cexprtk.evaluate_expression(expr[0].upper(), valuesDict)
                 if eval <= int(expr[1]) and n == 0:
                     return (True, threshold)
                 elif eval >= int(expr[1]) and n == 1:
@@ -164,4 +191,19 @@ def CheckAlertStatus(inputJsonFileName):
                 elif eval > int(expr[1]) and n == 4:
                     return (True, threshold)
                 break
-getErrorPlots('input.Json')
+def appendPlotJson(inputJsonFileName):
+    global jsonPlotJobs
+    jsonPlotJobs.append(inputJsonFileName)
+
+def backgroundTaskScheduler():
+    global jsonPlotJobs
+    while True:
+        if len(jsonPlotJobs) != 0:
+            getErrorPlots(jsonPlotJobs[0])
+            jsonPlotJobs = jsonPlotJobs[1:]
+            print('JSON Processed')
+
+b = Thread(name='backgroundTaskScheduler', target=backgroundTaskScheduler)
+b.start()
+print(CheckAlertStatus('input.json'))
+appendPlotJson('input.json')
