@@ -36,8 +36,8 @@ def getDFList(inputJsonFileName):
         else:
             startDate = endDate
 
-    for i in range(len(errors)):
-        HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[i]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric).replace("'", '"')
+    for errorIndex in range(len(errors)):
+        HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[errorIndex]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric).replace("'", '"')
         response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
         if str(response) != '<Response [200]>':
             return 'API call Failed'
@@ -51,9 +51,9 @@ def getDFList(inputJsonFileName):
             else:
                 tempDF = tempDF.rename(index = lambda x: x.split('T')[1])
             if not (str(tempDF.columns[0]).isdigit()):
-                tempDF = tempDF.rename(columns = lambda x: errors[i]['event_type'] + ', ' + x)
+                tempDF = tempDF.rename(columns = lambda x: errors[errorIndex]['event_type'] + ', ' + x)
             else:
-                tempDF = tempDF.rename(columns = lambda x: errors[i]['event_type'])
+                tempDF = tempDF.rename(columns = lambda x: errors[errorIndex]['event_type'])
             dfList.append(tempDF)
     return dfList
 
@@ -67,11 +67,11 @@ def getErrorPlots(inputJsonFileName):
     df = pd.DataFrame()
     if dfList == 'API call Failed':
         return 'API call Failed'
-    for i in dfList:
+    for dataframe in dfList:
         if df.empty:
-            df = i
+            df = dataframe
         else:
-            df = df.join(i)
+            df = df.join(dataframe)
 
     fig, ax = plt.subplots()
     xlabel = '' if (':' in df.index[0]) else 'Dates'
@@ -98,9 +98,9 @@ def getErrorPlots(inputJsonFileName):
         ax = df.plot.area(alpha=0.5, color=palette)
     if plt.xticks()[0][-1] > 19 and chartType not in ['stacked area', 'line']:
         xticksList = []
-        for i in range(0, int(plt.xticks()[0][-1]) + 1):
-            if i % int(len(plt.xticks()[0]) / 7) == 0:
-                xticksList.append(df.index[i])
+        for tick in range(0, int(plt.xticks()[0][-1]) + 1):
+            if tick % int(len(plt.xticks()[0]) / 7) == 0:
+                xticksList.append(df.index[tick])
             else:
                 xticksList.append('')
         plt.xticks(np.arange(len(xticksList)), xticksList)
@@ -111,8 +111,8 @@ def getErrorPlots(inputJsonFileName):
     plt.xlabel(xlabel, **csfont)
     plt.ylabel(inputJson['body']['measures'].title(), **csfont)
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2),
-           fancybox=True, ncol=5)
-    plt.title('Plot for ' + inputJsonFileName)
+           fancybox=True, ncol=3)
+    plt.title('')
     plt.savefig(plotName, dpi=600, bbox_inches='tight')
     plt.close(fig)
     return plotName
@@ -125,7 +125,7 @@ def autolabelbar(rects, ax, stacked=False):
     diff = (ylabels[1] - ylabels[0]) * 0.4
     for rect in rects:
         height = rect.get_height()
-        label_position = ((rect.get_y() + height / 2) - 1) if stacked else height + (y_height * 0.01)
+        label_position = ((rect.get_y() + height / 2) - (y_height * 0.01)) if stacked else height + (y_height * 0.01)
         if height:
             t = ax.text(rect.get_x() + rect.get_width()/2., label_position,
                 str(int(height)),
@@ -142,32 +142,32 @@ def CheckAlertStatus(inputJsonFileName):
     thresholds = inputJson['body']['thresholds']
     df = pd.DataFrame()
     thresholdsTriggered = []
-    if i == 'API call Failed':
+    if dfList == 'API call Failed':
         return 'API call Failed'
-    for i in dfList:
+    for dataframe in dfList:
         if df.empty:
-            df = i
+            df = dataframe
         else:
-            df = df.join(i)
-    temp = 65
+            df = df.join(dataframe)
+    ascii = 65
     for i in df.columns:
         valuesDict[chr(temp)] = df[i][-1]
-        temp = temp + 1
+        ascii = ascii + 1
     for threshold in thresholds:
-        for n in range(len(operators)):
-            if operators[n] in threshold:
-                expr = [ i.strip() for i in threshold.split(operators[n])]
+        for operatorIndex in range(len(operators)):
+            if operators[operatorIndex] in threshold:
+                expr = [ i.strip() for i in threshold.split(operators[operatorIndex])]
                 eval = cexprtk.evaluate_expression(expr[0], valuesDict)
                 print(eval)
-                if eval <= int(expr[1]) and n == 0:
+                if eval <= int(expr[1]) and operatorIndex == 0:
                     thresholdsTriggered.append((threshold, eval))
-                elif eval >= int(expr[1]) and n == 1:
+                elif eval >= int(expr[1]) and operatorIndex == 1:
                     thresholdsTriggered.append((threshold, eval))
-                elif eval == int(expr[1]) and n == 2:
+                elif eval == int(expr[1]) and operatorIndex == 2:
                     thresholdsTriggered.append((threshold, eval))
-                elif eval < int(expr[1]) and n == 3:
+                elif eval < int(expr[1]) and operatorIndex == 3:
                     thresholdsTriggered.append((threshold, eval))
-                elif eval > int(expr[1]) and n == 4:
+                elif eval > int(expr[1]) and operatorIndex == 4:
                     thresholdsTriggered.append((threshold, eval))
                 break
     return thresholdsTriggered
