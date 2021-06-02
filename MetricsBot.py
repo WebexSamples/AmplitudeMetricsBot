@@ -379,6 +379,9 @@ def call_repeat_scheduler(objectId: None, filename = None, messageSender = None)
 def cancel_job(jobDetails: None, room_id= None, message = None):
     jobID = jobDetails.split()[-1].strip()
     jobDoc = db.jobs.find_one({'_id': jobID})
+    if jobDoc == None:
+        metricsBot.send_message(room_id=room_id, text="Check the Job ID entered")
+        return
     if jobDoc['jobOwner'] == message['personEmail']:
         db.jobs.delete_one({"_id": jobID})
         metricsBot.send_message(room_id=room_id, text=" You will receive no furter updates regarding Job " + jobID)
