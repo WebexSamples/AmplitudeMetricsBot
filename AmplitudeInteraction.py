@@ -80,8 +80,7 @@ def getErrorPlots(inputJsonFileName):
         inputJson = json.load(f)
     plotName = inputJsonFileName[:-5] + 'plot.png'
     chartType = inputJson['body']['chart_type']
-    loop = asyncio.new_event_loop()
-    # loop = asyncio.get_event_loop()
+    loop = asyncio.get_event_loop()
     future = asyncio.ensure_future(getDFListAsynchronously("input.json"))
     loop.run_until_complete(future)
     tempDF = pd.DataFrame()
@@ -114,8 +113,7 @@ def getErrorPlots(inputJsonFileName):
         ax = df.plot.bar(stacked=True, color=palette)
         rects = ax.patches
         if len(df.index) <= 20:
-            ax.bar_label(p1, label_type='center')
-            # autolabelbar(rects, ax, True)
+            autolabelbar(rects, ax, True)
     elif chartType == 'stacked area':
         ax = df.plot.area(alpha=0.5, color=palette)
     if plt.xticks()[0][-1] > 19 and chartType not in ['stacked area', 'line']:
@@ -191,19 +189,3 @@ def CheckAlertStatus(inputJsonFileName):
                 elif eval > int(expr[1]) and n == 4:
                     return (True, threshold)
                 break
-def appendPlotJson(inputJsonFileName):
-    global jsonPlotJobs
-    jsonPlotJobs.append(inputJsonFileName)
-
-def backgroundTaskScheduler():
-    global jsonPlotJobs
-    while True:
-        if len(jsonPlotJobs) != 0:
-            getErrorPlots(jsonPlotJobs[0])
-            jsonPlotJobs = jsonPlotJobs[1:]
-            print('JSON Processed')
-
-b = Thread(name='backgroundTaskScheduler', target=backgroundTaskScheduler)
-b.start()
-print(CheckAlertStatus('input.json'))
-appendPlotJson('input.json')
