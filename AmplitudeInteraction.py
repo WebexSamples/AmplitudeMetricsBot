@@ -26,7 +26,7 @@ def apiCall(inputJsonFileName, HTTPString, errorString):
     interval = iValues[inputJson['body']['interval']]
     response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
     if str(response) != '<Response [200]>':
-        return 'API call Failed'
+        dfList.append('API call Failed')
     response_json = response.json()
     tempDF = pd.DataFrame(response_json['data']['series'], columns = response_json['data']['xValues']).transpose()
     if not (tempDF.empty):
@@ -41,7 +41,6 @@ def apiCall(inputJsonFileName, HTTPString, errorString):
         else:
             tempDF = tempDF.rename(columns = lambda x: errorString['event_type'])
         dfList.append(tempDF)
-        return tempDF
 
 async def getDFListAsynchronously(inputJsonFileName):
     global dfList
@@ -94,9 +93,9 @@ def getErrorPlots(inputJsonFileName):
     loop.run_until_complete(future)
     tempDF = pd.DataFrame()
     df = pd.DataFrame()
-    if dfList == 'API call Failed':
-        return 'API call Failed'
     for dataframe in dfList:
+        if dataframe == 'API call Failed':
+            return 'API call Failed'
         if tempDF.empty:
             tempDF = dataframe
         else:
@@ -178,9 +177,9 @@ def CheckAlertStatus(inputJsonFileName):
     df = pd.DataFrame()
     tempDF = pd.DataFrame()
     thresholdsTriggered = []
-    if dfList == 'API call Failed':
-        return 'API call Failed'
     for dataframe in dfList:
+        if dataframe == 'API call Failed':
+            return 'API call Failed'
         if tempDF.empty:
             tempDF = dataframe
         else:
