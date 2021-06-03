@@ -13,6 +13,9 @@ iValues = {"daily" : '1', "weekly" : '7', "monthly" : '30', "hourly" : '-3600000
 measures = {'uniques' : 'uniques', 'event totals' : 'totals', 'active %' : 'pct_dau', 'average' : 'average'}
 dfList = []
 keyFile = open(r'./.secret/api_keys.txt','r')
+themeFile = open(r'./themeConfig.json','r')
+themeJson = json.load(themeFile)
+themeFile.close()
 operators = ['<=', '>=', '=', '<', '>']
 keys = keyFile.read().split('\n')
 jsonPlotJobs = []
@@ -44,6 +47,7 @@ async def getDFListAsynchronously(inputJsonFileName):
     global dfList
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
+        f.close()
     errors = inputJson['body']['events']
     interval = iValues[inputJson['body']['interval']]
     metric = measures[inputJson['body']['measures']]
@@ -78,6 +82,7 @@ async def getDFListAsynchronously(inputJsonFileName):
 def getErrorPlots(inputJsonFileName):
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
+        f.close()
     plotName = inputJsonFileName[:-5] + 'plot.png'
     chartType = inputJson['body']['chart_type']
     loop = asyncio.get_event_loop()
@@ -85,25 +90,26 @@ def getErrorPlots(inputJsonFileName):
     loop.run_until_complete(future)
     tempDF = pd.DataFrame()
     df = pd.DataFrame()
-    errorNames = [event['event_type'] for event in inputJson['body']['events']]
-    for i in dfList:
-        if tempDF.empty:
-            tempDF = i
+    if dfList == 'API call Failed':
+        return 'API call Failed'
+    for dataframe in dfList:
+        if df.empty:
+            df = dataframe
         else:
-            tempDF = tempDF.join(i)
-    for error in errorNames:
-        df[error] = tempDF[error]
+            df = df.join(dataframe)
+
     fig, ax = plt.subplots()
-    xlabel = '' if (':' in df.index[0]) else 'Dates'
-    plt.style.use('fivethirtyeight')
-    csfont = {'fontname':'Futura'}
-    palette = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#808080', '#f0f0f0']
+    xlabel = 'Hours' if (':' in df.index[0]) else 'Dates'
+    plt.style.use(themeJson['body']['matplotlib_style'])
+    csfont = {'fontname': themeJson['body']['figure_font_name']}
+    palette = themeJson['body']['plot_color_palette']
     plt.rcParams["font.family"] = csfont['fontname']
-    plt.rcParams['font.size'] = '8'
+    plt.rcParams['font.size'] = themeJson['body']['figure_font_size']
     # sns.set_style('ticks')
+
     if chartType in ['bar', 'line']:
         if chartType == 'line':
-            ax = df.plot.line(marker='o', color=palette, linewidth=2, markersize=2)
+            ax = df.plot.line(marker='o', color=palette, linewidth=1, markersize=1)
         else:
             ax = df.plot.bar(color=palette)
             rects = ax.patches
@@ -118,12 +124,13 @@ def getErrorPlots(inputJsonFileName):
         ax = df.plot.area(alpha=0.5, color=palette)
     if plt.xticks()[0][-1] > 19 and chartType not in ['stacked area', 'line']:
         xticksList = []
-        for i in range(0, int(plt.xticks()[0][-1]) + 1):
-            if i % int(len(plt.xticks()[0]) / 7) == 0:
-                xticksList.append(df.index[i])
+        for tick in range(0, int(plt.xticks()[0][-1]) + 1):
+            if tick % int(len(plt.xticks()[0]) / 7) == 0:
+                xticksList.append(df.index[tick])
             else:
                 xticksList.append('')
         plt.xticks(np.arange(len(xticksList)), xticksList)
+
     ax.grid(alpha=0, b=True, axis='x')
     plt.tick_params(left = False, bottom = False)
     sns.despine(left=True, bottom=True)
@@ -132,8 +139,8 @@ def getErrorPlots(inputJsonFileName):
     plt.ylabel(inputJson['body']['measures'].title(), **csfont)
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2),
            fancybox=True, ncol=3)
-    plt.title('')
-    plt.savefig(plotName, dpi=600, bbox_inches='tight')
+    plt.title(inputJson['body']['plot_title'])
+    plt.savefig(plotName, dpi= int(themeJson['body']['plot_dpi']), bbox_inches='tight')
     plt.close(fig)
     return plotName
 
@@ -155,7 +162,7 @@ def autolabelbar(rects, ax, stacked=False):
 def CheckAlertStatus(inputJsonFileName):
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
-    if inputJson['body']['alerts'] == 'f':
+    if inputJson['body']['alerts'] == False:
         return
     loop = asyncio.get_event_loop()
     future = asyncio.ensure_future(getDFListAsynchronously("input.json"))
@@ -164,28 +171,33 @@ def CheckAlertStatus(inputJsonFileName):
     thresholds = inputJson['body']['thresholds']
     errorNames = [event['event_type'] for event in inputJson['body']['events']]
     df = pd.DataFrame()
+    thresholdsTriggered = []
+    if dfList == 'API call Failed':
+        return 'API call Failed'
     for dataframe in dfList:
         if df.empty:
             df = dataframe
         else:
             df = df.join(dataframe)
     ascii = 65
-    for error in errorNames:
-        valuesDict[chr(ascii)] = df[error][-1]
+    for column in df.columns:
+        valuesDict[chr(ascii)] = df[column][-1]
         ascii = ascii + 1
     for threshold in thresholds:
-        for n in range(len(operators)):
-            if operators[n] in threshold:
-                expr = [ threshold.strip() for threshold in threshold.split(operators[n])]
-                eval = cexprtk.evaluate_expression(expr[0].upper(), valuesDict)
-                if eval <= int(expr[1]) and n == 0:
-                    return (True, threshold)
-                elif eval >= int(expr[1]) and n == 1:
-                    return (True, threshold)
-                elif eval == int(expr[1]) and n == 2:
-                    return (True, threshold)
-                elif eval < int(expr[1]) and n == 3:
-                    return (True, threshold)
-                elif eval > int(expr[1]) and n == 4:
-                    return (True, threshold)
+        for operatorIndex in range(len(operators)):
+            if operators[operatorIndex] in threshold:
+                expr = [ i.strip() for i in threshold.split(operators[operatorIndex])]
+                eval = cexprtk.evaluate_expression(expr[0], valuesDict)
+                print(eval)
+                if eval <= int(expr[1]) and operatorIndex == 0:
+                    thresholdsTriggered.append((threshold, eval))
+                elif eval >= int(expr[1]) and operatorIndex == 1:
+                    thresholdsTriggered.append((threshold, eval))
+                elif eval == int(expr[1]) and operatorIndex == 2:
+                    thresholdsTriggered.append((threshold, eval))
+                elif eval < int(expr[1]) and operatorIndex == 3:
+                    thresholdsTriggered.append((threshold, eval))
+                elif eval > int(expr[1]) and operatorIndex == 4:
+                    thresholdsTriggered.append((threshold, eval))
                 break
+    return thresholdsTriggered

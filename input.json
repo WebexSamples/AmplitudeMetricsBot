@@ -1,14 +1,15 @@
 {
   "type": "metricsBotConfig",
   "body": {
+    "plot_title": "",
     "measures": "uniques",
     "chart_type": "stacked bar",
     "interval": "daily",
     "interval_range": "10d",
-    "dates_between": "YYYYMMDD - YYYYMMDD",
-    "repeat": "f",
+    "between_dates": "20210228 - 20210310",
+    "repeat": false,
     "repeat_interval": "daily",
-    "alerts": "t",
+    "alerts": false,
     "events": [
       {
         "event_type": "client_ecm_add_account_funnel"
@@ -19,10 +20,10 @@
     ],
     "thresholds": [
       "A + B >= 60",
-      "A - B < 70"
+      "A - B > 70"
     ],
     "formulas": [
-      "AVG(A) - AVG(B)"
+      "TOTALS(A) + UNIQUES(B)"
     ]
   }
 }
