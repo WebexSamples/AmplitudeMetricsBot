@@ -65,6 +65,9 @@ async def getDFListAsynchronously(inputJsonFileName):
             startDate = str((datetime.now() + timedelta(-(int(inputJson['body']['interval_range'][:-1]) * 30) + 1)).date()).replace('-','')
         else:
             startDate = endDate
+    if inputJson['body']['between_dates'] != '' and not(inputJson['body']['repeat']) and not(inputJson['body']['alerts']):
+        (startDate, endDate) = [date.strip() for date in inputJson['body']['between_dates'].split('-')]
+
     with ThreadPoolExecutor(max_workers=10) as executor:
         with requests.Session() as session:
             loop = asyncio.get_event_loop()
@@ -85,6 +88,7 @@ def getErrorPlots(inputJsonFileName):
         f.close()
     plotName = inputJsonFileName[:-5] + 'plot.png'
     chartType = inputJson['body']['chart_type']
+    errorNames = [event['event_type'] for event in inputJson['body']['events']]
     loop = asyncio.get_event_loop()
     future = asyncio.ensure_future(getDFListAsynchronously("input.json"))
     loop.run_until_complete(future)
@@ -93,11 +97,12 @@ def getErrorPlots(inputJsonFileName):
     if dfList == 'API call Failed':
         return 'API call Failed'
     for dataframe in dfList:
-        if df.empty:
-            df = dataframe
+        if tempDF.empty:
+            tempDF = dataframe
         else:
-            df = df.join(dataframe)
-
+            tempDF = tempDF.join(dataframe)
+    for error in errorNames:
+        df[error] = tempDF[error]
     fig, ax = plt.subplots()
     xlabel = 'Hours' if (':' in df.index[0]) else 'Dates'
     plt.style.use(themeJson['body']['matplotlib_style'])
@@ -171,14 +176,18 @@ def CheckAlertStatus(inputJsonFileName):
     thresholds = inputJson['body']['thresholds']
     errorNames = [event['event_type'] for event in inputJson['body']['events']]
     df = pd.DataFrame()
+    tempDF = pd.DataFrame()
     thresholdsTriggered = []
     if dfList == 'API call Failed':
         return 'API call Failed'
     for dataframe in dfList:
-        if df.empty:
-            df = dataframe
+        if tempDF.empty:
+            tempDF = dataframe
         else:
-            df = df.join(dataframe)
+            tempDF = tempDF.join(dataframe)
+    for error in errorNames:
+        df[error] = tempDF[error]
+
     ascii = 65
     for column in df.columns:
         valuesDict[chr(ascii)] = df[column][-1]
@@ -188,7 +197,7 @@ def CheckAlertStatus(inputJsonFileName):
             if operators[operatorIndex] in threshold:
                 expr = [ i.strip() for i in threshold.split(operators[operatorIndex])]
                 eval = cexprtk.evaluate_expression(expr[0], valuesDict)
-                print(eval)
+
                 if eval <= int(expr[1]) and operatorIndex == 0:
                     thresholdsTriggered.append((threshold, eval))
                 elif eval >= int(expr[1]) and operatorIndex == 1:
