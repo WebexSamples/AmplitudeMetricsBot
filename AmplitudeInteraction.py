@@ -12,12 +12,16 @@ import cexprtk
 iValues = {"daily" : '1', "weekly" : '7', "monthly" : '30', "hourly" : '-3600000', "realtime" : '-300000'}
 measures = {'uniques' : 'uniques', 'event totals' : 'totals', 'active %' : 'pct_dau', 'average' : 'average'}
 keyFile = open(r'./.secret/api_keys.txt','r')
+themeFile = open(r'./themeConfig.json','r')
+themeJson = json.load(themeFile)
+themeFile.close()
 operators = ['<=', '>=', '=', '<', '>']
 keys = keyFile.read().split('\n')
 
 def getDFList(inputJsonFileName):
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
+        f.close()
     errors = inputJson['body']['events']
     interval = iValues[inputJson['body']['interval']]
     metric = measures[inputJson['body']['measures']]
@@ -35,6 +39,8 @@ def getDFList(inputJsonFileName):
             startDate = str((datetime.now() + timedelta(-(int(inputJson['body']['interval_range'][:-1]) * 30) + 1)).date()).replace('-','')
         else:
             startDate = endDate
+    if inputJson['body']['between_dates'] != '' and not(inputJson['body']['repeat']) and not(inputJson['body']['alerts']):
+        (startDate, endDate) = [date.strip() for date in inputJson['body']['between_dates'].split('-')]
 
     for errorIndex in range(len(errors)):
         HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[errorIndex]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric).replace("'", '"')
@@ -60,6 +66,7 @@ def getDFList(inputJsonFileName):
 def getErrorPlots(inputJsonFileName):
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
+        f.close()
     plotName = inputJsonFileName[:-5] + 'plot.png'
     chartType = inputJson['body']['chart_type']
     dfList = []
@@ -74,13 +81,14 @@ def getErrorPlots(inputJsonFileName):
             df = df.join(dataframe)
 
     fig, ax = plt.subplots()
-    xlabel = '' if (':' in df.index[0]) else 'Dates'
-    plt.style.use('fivethirtyeight')
-    csfont = {'fontname':'Futura'}
-    palette = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#808080', '#f0f0f0']
+    xlabel = 'Hours' if (':' in df.index[0]) else 'Dates'
+    plt.style.use(themeJson['body']['matplotlib_style'])
+    csfont = {'fontname': themeJson['body']['figure_font_name']}
+    palette = themeJson['body']['plot_color_palette']
     plt.rcParams["font.family"] = csfont['fontname']
-    plt.rcParams['font.size'] = '8'
+    plt.rcParams['font.size'] = themeJson['body']['figure_font_size']
     # sns.set_style('ticks')
+
     if chartType in ['bar', 'line']:
         if chartType == 'line':
             ax = df.plot.line(marker='o', color=palette, linewidth=1, markersize=1)
@@ -104,6 +112,7 @@ def getErrorPlots(inputJsonFileName):
             else:
                 xticksList.append('')
         plt.xticks(np.arange(len(xticksList)), xticksList)
+
     ax.grid(alpha=0, b=True, axis='x')
     plt.tick_params(left = False, bottom = False)
     sns.despine(left=True, bottom=True)
@@ -112,8 +121,8 @@ def getErrorPlots(inputJsonFileName):
     plt.ylabel(inputJson['body']['measures'].title(), **csfont)
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2),
            fancybox=True, ncol=3)
-    plt.title('')
-    plt.savefig(plotName, dpi=600, bbox_inches='tight')
+    plt.title(inputJson['body']['plot_title'])
+    plt.savefig(plotName, dpi= int(themeJson['body']['plot_dpi']), bbox_inches='tight')
     plt.close(fig)
     return plotName
 
@@ -150,8 +159,8 @@ def CheckAlertStatus(inputJsonFileName):
         else:
             df = df.join(dataframe)
     ascii = 65
-    for i in df.columns:
-        valuesDict[chr(temp)] = df[i][-1]
+    for column in df.columns:
+        valuesDict[chr(ascii)] = df[column][-1]
         ascii = ascii + 1
     for threshold in thresholds:
         for operatorIndex in range(len(operators)):

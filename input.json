@@ -1,24 +1,29 @@
 {
   "type": "metricsBotConfig",
   "body": {
+    "plot_title": "",
     "measures": "uniques",
     "chart_type": "bar",
     "interval": "daily",
-    "interval_range": "21d",
-    "repeat": "f",
+    "interval_range": "10d",
+    "between_dates": "20210228 - 20210310",
+    "repeat": false,
     "repeat_interval": "daily",
-    "alerts": true,
+    "alerts": false,
     "events": [
       {
         "event_type": "client_ecm_add_account_funnel"
       },
       {
-        "event_type": "client_ecm_file_share_funne"
+        "event_type": "client_ecm_file_share_funnel"
       }
     ],
     "thresholds": [
       "A + B >= 60",
       "A - B > 70"
+    ],
+    "formulas": [
+      "TOTALS(A) + UNIQUES(B)"
     ]
   }
 }
