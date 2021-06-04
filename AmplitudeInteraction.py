@@ -86,7 +86,6 @@ def getErrorPlots(inputJsonFileName):
         f.close()
     plotName = inputJsonFileName[:-5] + 'plot.png'
     chartType = inputJson['body']['chart_type']
-    errorNames = [event['event_type'] for event in inputJson['body']['events']]
     loop = asyncio.get_event_loop()
     future = asyncio.ensure_future(getDFListAsynchronously(inputJson))
     loop.run_until_complete(future)
@@ -170,7 +169,6 @@ def CheckAlertStatus(inputJsonFileName):
     loop.run_until_complete(future)
     valuesDict = {}
     thresholds = inputJson['body']['thresholds']
-    errorNames = [event['event_type'] for event in inputJson['body']['events']]
     df = pd.DataFrame()
     thresholdsTriggered = []
     for dataframe in dfList:
