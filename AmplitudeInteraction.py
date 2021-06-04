@@ -1,31 +1,54 @@
+import requests, json, matplotlib, cexprtk, asyncio
 import pandas as pd
-import requests
-import json
 from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
-import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-import cexprtk
+from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
+
 iValues = {"daily" : '1', "weekly" : '7', "monthly" : '30', "hourly" : '-3600000', "realtime" : '-300000'}
 measures = {'uniques' : 'uniques', 'event totals' : 'totals', 'active %' : 'pct_dau', 'average' : 'average'}
+dfList = []
 keyFile = open(r'./.secret/api_keys.txt','r')
 themeFile = open(r'./themeConfig.json','r')
 themeJson = json.load(themeFile)
 themeFile.close()
 operators = ['<=', '>=', '=', '<', '>']
 keys = keyFile.read().split('\n')
+jsonPlotJobs = []
 
-def getDFList(inputJsonFileName):
-    with open(inputJsonFileName) as f:
-        inputJson = json.load(f)
-        f.close()
+def apiCall(inputJson, HTTPString, errorString, eventNo):
+    global dfList
+    interval = iValues[inputJson['body']['interval']]
+    response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
+    if str(response) != '<Response [200]>':
+        dfList.append('API call Failed')
+    response_json = response.json()
+    tempDF = pd.DataFrame(response_json['data']['series'], columns = response_json['data']['xValues']).transpose()
+    if not (tempDF.empty):
+        if (response_json['data']['seriesLabels'] != [0]):
+            tempDF.columns = [el[1] for el in response_json['data']['seriesLabels']]
+        if interval in ['1','7']:
+            tempDF = tempDF.rename(index = lambda x: x.split('T')[0])
+        else:
+            tempDF = tempDF.rename(index = lambda x: x.split('T')[1])
+        if not (str(tempDF.columns[0]).isdigit()):
+            tempDF = tempDF.rename(columns = lambda x: errorString['event_type'] + ', ' + x)
+        else:
+            tempDF = tempDF.rename(columns = lambda x: errorString['event_type'])
+        tempDF = tempDF.rename(columns = lambda x: '(' + chr(eventNo + 65) + ') ' + x)
+        dfList.append(tempDF)
+
+async def getDFListAsynchronously(inputJson):
+    global dfList
     errors = inputJson['body']['events']
     interval = iValues[inputJson['body']['interval']]
     metric = measures[inputJson['body']['measures']]
     dfList = []
+    eventNo = 0
     endDate = str(datetime.now().date()).replace('-','')
     if (interval == '-3600000' or interval == '-300000'):
         startDate = endDate
@@ -42,26 +65,20 @@ def getDFList(inputJsonFileName):
     if inputJson['body']['between_dates'] != '' and not(inputJson['body']['repeat']) and not(inputJson['body']['alerts']):
         (startDate, endDate) = [date.strip() for date in inputJson['body']['between_dates'].split('-')]
 
-    for errorIndex in range(len(errors)):
-        HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[errorIndex]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric).replace("'", '"')
-        response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
-        if str(response) != '<Response [200]>':
-            return 'API call Failed'
-        response_json = response.json()
-        tempDF = pd.DataFrame(response_json['data']['series'], columns = response_json['data']['xValues']).transpose()
-        if not (tempDF.empty):
-            if (response_json['data']['seriesLabels'] != [0]):
-                tempDF.columns = [el[1] for el in response_json['data']['seriesLabels']]
-            if interval in ['1','7']:
-                tempDF = tempDF.rename(index = lambda x: x.split('T')[0])
-            else:
-                tempDF = tempDF.rename(index = lambda x: x.split('T')[1])
-            if not (str(tempDF.columns[0]).isdigit()):
-                tempDF = tempDF.rename(columns = lambda x: errors[errorIndex]['event_type'] + ', ' + x)
-            else:
-                tempDF = tempDF.rename(columns = lambda x: errors[errorIndex]['event_type'])
-            dfList.append(tempDF)
-    return dfList
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        with requests.Session() as session:
+            loop = asyncio.get_event_loop()
+            tasks = []
+            for i in range(len(errors)):
+                HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[i]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric).replace("'", '"')
+                tasks.append(loop.run_in_executor(
+                    executor,
+                    apiCall,
+                    *(inputJson, HTTPString, errors[i], eventNo)
+                ))
+                eventNo = eventNo + 1
+            for response in await asyncio.gather(*tasks):
+                pass
 
 def getErrorPlots(inputJsonFileName):
     with open(inputJsonFileName) as f:
@@ -69,17 +86,18 @@ def getErrorPlots(inputJsonFileName):
         f.close()
     plotName = inputJsonFileName[:-5] + 'plot.png'
     chartType = inputJson['body']['chart_type']
-    dfList = []
-    dfList = getDFList(inputJsonFileName)
+    loop = asyncio.get_event_loop()
+    future = asyncio.ensure_future(getDFListAsynchronously(inputJson))
+    loop.run_until_complete(future)
     df = pd.DataFrame()
-    if dfList == 'API call Failed':
-        return 'API call Failed'
     for dataframe in dfList:
+        if type(dataframe) == type('string'):
+            return 'API call Failed'
         if df.empty:
             df = dataframe
         else:
             df = df.join(dataframe)
-
+    df = df.reindex(sorted(df.columns), axis=1)
     fig, ax = plt.subplots()
     xlabel = 'Hours' if (':' in df.index[0]) else 'Dates'
     plt.style.use(themeJson['body']['matplotlib_style'])
@@ -146,28 +164,29 @@ def CheckAlertStatus(inputJsonFileName):
         inputJson = json.load(f)
     if inputJson['body']['alerts'] == False:
         return
-    dfList = getDFList(inputJsonFileName)
+    loop = asyncio.get_event_loop()
+    future = asyncio.ensure_future(getDFListAsynchronously(inputJson))
+    loop.run_until_complete(future)
     valuesDict = {}
     thresholds = inputJson['body']['thresholds']
     df = pd.DataFrame()
     thresholdsTriggered = []
-    if dfList == 'API call Failed':
-        return 'API call Failed'
     for dataframe in dfList:
+        if type(dataframe) == type('string'):
+            return 'API call Failed'
         if df.empty:
             df = dataframe
         else:
             df = df.join(dataframe)
-    ascii = 65
+    df = df.reindex(sorted(df.columns), axis=1)
     for column in df.columns:
-        valuesDict[chr(ascii)] = df[column][-1]
-        ascii = ascii + 1
+        valuesDict[column[1]] = df[column][-1]
     for threshold in thresholds:
         for operatorIndex in range(len(operators)):
             if operators[operatorIndex] in threshold:
                 expr = [ i.strip() for i in threshold.split(operators[operatorIndex])]
                 eval = cexprtk.evaluate_expression(expr[0], valuesDict)
-                print(eval)
+
                 if eval <= int(expr[1]) and operatorIndex == 0:
                     thresholdsTriggered.append((threshold, eval))
                 elif eval >= int(expr[1]) and operatorIndex == 1:
