@@ -20,9 +20,10 @@ operators = ['<=', '>=', '=', '<', '>']
 keys = keyFile.read().split('\n')
 jsonPlotJobs = []
 
-def apiCall(inputJsonFileName, HTTPString, errorString):
+def apiCall(inputJsonFileName, HTTPString, errorString, eventNo):
     with open(inputJsonFileName) as f:
         inputJson = json.load(f)
+    global dfList, asciiCode
     interval = iValues[inputJson['body']['interval']]
     response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
     if str(response) != '<Response [200]>':
@@ -40,6 +41,7 @@ def apiCall(inputJsonFileName, HTTPString, errorString):
             tempDF = tempDF.rename(columns = lambda x: errorString['event_type'] + ', ' + x)
         else:
             tempDF = tempDF.rename(columns = lambda x: errorString['event_type'])
+        tempDF = tempDF.rename(columns = lambda x: '(' + chr(eventNo + 65) + ') ' + x)
         dfList.append(tempDF)
 
 async def getDFListAsynchronously(inputJsonFileName):
@@ -51,6 +53,7 @@ async def getDFListAsynchronously(inputJsonFileName):
     interval = iValues[inputJson['body']['interval']]
     metric = measures[inputJson['body']['measures']]
     dfList = []
+    eventNo = 0
     endDate = str(datetime.now().date()).replace('-','')
     if (interval == '-3600000' or interval == '-300000'):
         startDate = endDate
@@ -76,8 +79,9 @@ async def getDFListAsynchronously(inputJsonFileName):
                 tasks.append(loop.run_in_executor(
                     executor,
                     apiCall,
-                    *(inputJsonFileName, HTTPString, errors[i])
+                    *(inputJsonFileName, HTTPString, errors[i], eventNo)
                 ))
+                eventNo = eventNo + 1
             for response in await asyncio.gather(*tasks):
                 pass
 
@@ -89,19 +93,17 @@ def getErrorPlots(inputJsonFileName):
     chartType = inputJson['body']['chart_type']
     errorNames = [event['event_type'] for event in inputJson['body']['events']]
     loop = asyncio.get_event_loop()
-    future = asyncio.ensure_future(getDFListAsynchronously("input.json"))
+    future = asyncio.ensure_future(getDFListAsynchronously(inputJsonFileName))
     loop.run_until_complete(future)
-    tempDF = pd.DataFrame()
     df = pd.DataFrame()
     for dataframe in dfList:
-        if dataframe == 'API call Failed':
+        if type(dataframe) == type('string'):
             return 'API call Failed'
-        if tempDF.empty:
-            tempDF = dataframe
+        if df.empty:
+            df = dataframe
         else:
-            tempDF = tempDF.join(dataframe)
-    for error in errorNames:
-        df[error] = tempDF[error]
+            df = df.join(dataframe)
+    df = df.reindex(sorted(df.columns), axis=1)
     fig, ax = plt.subplots()
     xlabel = 'Hours' if (':' in df.index[0]) else 'Dates'
     plt.style.use(themeJson['body']['matplotlib_style'])
@@ -169,28 +171,23 @@ def CheckAlertStatus(inputJsonFileName):
     if inputJson['body']['alerts'] == False:
         return
     loop = asyncio.get_event_loop()
-    future = asyncio.ensure_future(getDFListAsynchronously("input.json"))
+    future = asyncio.ensure_future(getDFListAsynchronously(inputJsonFileName))
     loop.run_until_complete(future)
     valuesDict = {}
     thresholds = inputJson['body']['thresholds']
     errorNames = [event['event_type'] for event in inputJson['body']['events']]
     df = pd.DataFrame()
-    tempDF = pd.DataFrame()
     thresholdsTriggered = []
     for dataframe in dfList:
-        if dataframe == 'API call Failed':
+        if type(dataframe) == type('string'):
             return 'API call Failed'
-        if tempDF.empty:
-            tempDF = dataframe
+        if df.empty:
+            df = dataframe
         else:
-            tempDF = tempDF.join(dataframe)
-    for error in errorNames:
-        df[error] = tempDF[error]
-
-    ascii = 65
+            df = df.join(dataframe)
+    df = df.reindex(sorted(df.columns), axis=1)
     for column in df.columns:
-        valuesDict[chr(ascii)] = df[column][-1]
-        ascii = ascii + 1
+        valuesDict[column[1]] = df[column][-1]
     for threshold in thresholds:
         for operatorIndex in range(len(operators)):
             if operators[operatorIndex] in threshold:
