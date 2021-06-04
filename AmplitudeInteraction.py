@@ -20,10 +20,8 @@ operators = ['<=', '>=', '=', '<', '>']
 keys = keyFile.read().split('\n')
 jsonPlotJobs = []
 
-def apiCall(inputJsonFileName, HTTPString, errorString, eventNo):
-    with open(inputJsonFileName) as f:
-        inputJson = json.load(f)
-    global dfList, asciiCode
+def apiCall(inputJson, HTTPString, errorString, eventNo):
+    global dfList
     interval = iValues[inputJson['body']['interval']]
     response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
     if str(response) != '<Response [200]>':
@@ -44,11 +42,8 @@ def apiCall(inputJsonFileName, HTTPString, errorString, eventNo):
         tempDF = tempDF.rename(columns = lambda x: '(' + chr(eventNo + 65) + ') ' + x)
         dfList.append(tempDF)
 
-async def getDFListAsynchronously(inputJsonFileName):
+async def getDFListAsynchronously(inputJson):
     global dfList
-    with open(inputJsonFileName) as f:
-        inputJson = json.load(f)
-        f.close()
     errors = inputJson['body']['events']
     interval = iValues[inputJson['body']['interval']]
     metric = measures[inputJson['body']['measures']]
@@ -79,7 +74,7 @@ async def getDFListAsynchronously(inputJsonFileName):
                 tasks.append(loop.run_in_executor(
                     executor,
                     apiCall,
-                    *(inputJsonFileName, HTTPString, errors[i], eventNo)
+                    *(inputJson, HTTPString, errors[i], eventNo)
                 ))
                 eventNo = eventNo + 1
             for response in await asyncio.gather(*tasks):
@@ -93,7 +88,7 @@ def getErrorPlots(inputJsonFileName):
     chartType = inputJson['body']['chart_type']
     errorNames = [event['event_type'] for event in inputJson['body']['events']]
     loop = asyncio.get_event_loop()
-    future = asyncio.ensure_future(getDFListAsynchronously(inputJsonFileName))
+    future = asyncio.ensure_future(getDFListAsynchronously(inputJson))
     loop.run_until_complete(future)
     df = pd.DataFrame()
     for dataframe in dfList:
@@ -171,7 +166,7 @@ def CheckAlertStatus(inputJsonFileName):
     if inputJson['body']['alerts'] == False:
         return
     loop = asyncio.get_event_loop()
-    future = asyncio.ensure_future(getDFListAsynchronously(inputJsonFileName))
+    future = asyncio.ensure_future(getDFListAsynchronously(inputJson))
     loop.run_until_complete(future)
     valuesDict = {}
     thresholds = inputJson['body']['thresholds']
