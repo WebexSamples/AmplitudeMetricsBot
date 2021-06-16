@@ -13,40 +13,53 @@ iValues = {"daily" : '1', "weekly" : '7', "monthly" : '30', "hourly" : '-3600000
 measures = {'uniques' : 'uniques', 'event totals' : 'totals', 'active %' : 'pct_dau', 'average' : 'average'}
 dfList = []
 keyFile = open(r'./.secret/api_keys.txt','r')
+keys = keyFile.read().split('\n')
+keyFile.close()
 themeFile = open(r'./themeConfig.json','r')
 themeJson = json.load(themeFile)
 themeFile.close()
-operators = ['<=', '>=', '=', '<', '>']
-keys = keyFile.read().split('\n')
-jsonPlotJobs = []
 
-def apiCall(inputJson, HTTPString, errorString, eventNo):
+def apiCall(inputJson, HTTPString, errorString, eventNo, formula=''):
     global dfList
     interval = iValues[inputJson['body']['interval']]
     response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
     if str(response) != '<Response [200]>':
         dfList.append('API call Failed')
+        return
     response_json = response.json()
+    if 'error' in response_json:
+        dfList.append('API call Failed')
+        return
     tempDF = pd.DataFrame(response_json['data']['series'], columns = response_json['data']['xValues']).transpose()
     if not (tempDF.empty):
-        if (response_json['data']['seriesLabels'] != [0]):
+        if (response_json['data']['seriesLabels'] != [0] and response_json['data']['seriesLabels'][0] != ''):
             tempDF.columns = [el[1] for el in response_json['data']['seriesLabels']]
         if interval in ['1','7']:
             tempDF = tempDF.rename(index = lambda x: x.split('T')[0])
         else:
             tempDF = tempDF.rename(index = lambda x: x.split('T')[1])
-        if not (str(tempDF.columns[0]).isdigit()):
-            tempDF = tempDF.rename(columns = lambda x: errorString['event_type'] + ', ' + x)
+        if formula == '':
+            if not (str(tempDF.columns[0]).isdigit()):
+                tempDF = tempDF.rename(columns = lambda x: errorString['event_type'] + ', ' + x)
+            else:
+                tempDF = tempDF.rename(columns = lambda x: errorString['event_type'])
+            tempDF = tempDF.rename(columns = lambda x: '(' + chr(eventNo + 65) + ') ' + x)
+        elif len(tempDF.columns) != 1:
+            if not (str(tempDF.columns[0]).isdigit()):
+                tempDF.columns = [el for el in response_json['data']['seriesLabels']]
+            tempDF = tempDF.rename(columns = lambda x: formula + '(' + chr(eventNo + 65) + ') ' + x)
+        elif 'PERCENTILE' in formula:
+            tempDF = tempDF.rename(columns = lambda x: formula.split()[0] + '(' + chr(eventNo + 65) + '), ' + formula.split()[-1])
         else:
-            tempDF = tempDF.rename(columns = lambda x: errorString['event_type'])
-        tempDF = tempDF.rename(columns = lambda x: '(' + chr(eventNo + 65) + ') ' + x)
+            tempDF = tempDF.rename(columns = lambda x: formula + '(' + chr(eventNo + 65) + ')')
         dfList.append(tempDF)
 
-async def getDFListAsynchronously(inputJson):
+async def getDFListAsynchronously(inputJson, parameter_plot = 'events'):
     global dfList
     errors = inputJson['body']['events']
     interval = iValues[inputJson['body']['interval']]
-    metric = measures[inputJson['body']['measures']]
+    metric = measures[inputJson['body']['measures']] if parameter_plot == 'events' else 'formula'
+    eventMetricList = [[] for i in range(26)]
     dfList = []
     eventNo = 0
     endDate = str(datetime.now().date()).replace('-','')
@@ -69,14 +82,27 @@ async def getDFListAsynchronously(inputJson):
         with requests.Session() as session:
             loop = asyncio.get_event_loop()
             tasks = []
-            for i in range(len(errors)):
-                HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[i]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric).replace("'", '"')
-                tasks.append(loop.run_in_executor(
-                    executor,
-                    apiCall,
-                    *(inputJson, HTTPString, errors[i], eventNo)
-                ))
-                eventNo = eventNo + 1
+            if parameter_plot == 'events':
+                for i in range(len(errors)):
+                    HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[i]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric).replace("'", '"')
+                    tasks.append(loop.run_in_executor(
+                        executor,
+                        apiCall,
+                        *(inputJson, HTTPString, errors[i], eventNo)
+                    ))
+                    eventNo = eventNo + 1
+            else:
+                eventMetricList = getEventMetricsList(inputJson)
+                for index in range(len(errors)):
+                    for metricsFormula in eventMetricList[index]:
+                        formula = metricsFormula + '(A)' if ' ' not in metricsFormula else metricsFormula.split()[0] + '(A, ' + metricsFormula.split()[-1] + ')'
+                        HTTPString = ('https://amplitude.com/api/2/events/segmentation?e=' + str(errors[index]) + '&start=' + startDate + '&end=' + endDate + '&i=' + interval + '&m=' + metric + '&formula=' + formula).replace("'", '"')
+                        tasks.append(loop.run_in_executor(
+                            executor,
+                            apiCall,
+                            *(inputJson, HTTPString, errors[index], eventNo, metricsFormula)
+                        ))
+                    eventNo = eventNo + 1
             for response in await asyncio.gather(*tasks):
                 pass
 
@@ -86,8 +112,12 @@ def getErrorPlots(inputJsonFileName):
         f.close()
     plotName = inputJsonFileName[:-5] + 'plot.png'
     chartType = inputJson['body']['chart_type']
-    loop = asyncio.get_event_loop()
-    future = asyncio.ensure_future(getDFListAsynchronously(inputJson))
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    if len(inputJson['body']['formulas']) > 0:
+        future = asyncio.ensure_future(getDFListAsynchronously(inputJson, parameter_plot = 'formula'))
+    else:
+        future = asyncio.ensure_future(getDFListAsynchronously(inputJson, parameter_plot = 'events'))
     loop.run_until_complete(future)
     df = pd.DataFrame()
     for dataframe in dfList:
@@ -97,7 +127,10 @@ def getErrorPlots(inputJsonFileName):
             df = dataframe
         else:
             df = df.join(dataframe)
-    df = df.reindex(sorted(df.columns), axis=1)
+    if len(inputJson['body']['formulas']) > 0:
+        df = formulaEvaluator(df, inputJson['body']['formulas'])
+    else:
+        df = df.reindex(sorted(df.columns), axis=1)
     fig, ax = plt.subplots()
     xlabel = 'Hours' if (':' in df.index[0]) else 'Dates'
     plt.style.use(themeJson['body']['matplotlib_style'])
@@ -136,7 +169,10 @@ def getErrorPlots(inputJsonFileName):
     sns.despine(left=True, bottom=True)
     ax.figure.autofmt_xdate()
     plt.xlabel(xlabel, **csfont)
-    plt.ylabel(inputJson['body']['measures'].title(), **csfont)
+    if len(inputJson['body']['formulas']):
+        plt.ylabel(inputJson['body']['plot_title'].title(), **csfont)
+    else:
+        plt.ylabel(inputJson['body']['measures'].title(), **csfont)
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2),
            fancybox=True, ncol=3)
     plt.title(inputJson['body']['plot_title'])
@@ -164,12 +200,14 @@ def CheckAlertStatus(inputJsonFileName):
         inputJson = json.load(f)
     if inputJson['body']['alerts'] == False:
         return
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     future = asyncio.ensure_future(getDFListAsynchronously(inputJson))
     loop.run_until_complete(future)
     valuesDict = {}
     thresholds = inputJson['body']['thresholds']
     df = pd.DataFrame()
+    operators = ['<=', '>=', '=', '<', '>']
     thresholdsTriggered = []
     for dataframe in dfList:
         if type(dataframe) == type('string'):
@@ -199,3 +237,46 @@ def CheckAlertStatus(inputJsonFileName):
                     thresholdsTriggered.append((threshold, eval))
                 break
     return thresholdsTriggered
+
+def getEventMetricsList(inputJson):
+    metricsList = ['ACTIVE', 'AVG', 'TOTALS', 'UNIQUES', 'HIST', 'FREQPERCENTILE', 'PERCENTILE', 'PROPSUM', 'PROPAVG', 'PROPHIST', 'PROPCOUNT', 'PROPCOUNTAVG', 'REVENUETOTAL', 'ARPAU']
+    eventMetricList = [[] for i in range(26)]
+    formulas = inputJson['body']['formulas']
+    for formula in formulas:
+        for metric in metricsList:
+            metricIndexes = [i for i in range(len(formula)) if formula.startswith(metric, i)]
+            for index in metricIndexes:
+                if formula[index + len(metric)] == '(' and formula[index - 1] not in 'PTQ':
+                    metricErrorAlpha = formula[index + len(metric) + 1]
+                    if formula[index:index+len(metric)] in "FREQPERCENTILE":
+                        metricErrorValue = formula[index + len(metric) + 3 : index + len(metric) + 3 + formula[index + len(metric) + 3:].find(')')]
+                        metric = metric + ' ' + metricErrorValue
+                    if metric not in eventMetricList[ord(metricErrorAlpha) - 65]:
+                        eventMetricList[ord(metricErrorAlpha) - 65].append(metric)
+    return eventMetricList
+def formulaEvaluator(df, formulas):
+    metricsList = ['ACTIVE', 'AVG', 'TOTALS', 'UNIQUES', 'HIST', 'FREQPERCENTILE', 'PERCENTILE', 'PROPSUM', 'PROPAVG', 'PROPHIST', 'PROPCOUNT', 'PROPCOUNTAVG', 'REVENUETOTAL', 'ARPAU']
+    evaluatedDF = pd.DataFrame()
+    valuesDict = {}
+    formulaNo = 1
+    for formula in formulas:
+        evaluatedValuesList = []
+        for index in range(len(df.index)):
+            ascii = 65
+            for column in df.columns:
+                if ' ' not in column:
+                    valuesDict[chr(ascii)] = df[column].to_list()[index]
+                    formula = formula.replace(str(column), chr(ascii), -1)
+                ascii = ascii + 1
+            try:
+                eval = cexprtk.evaluate_expression(formula, valuesDict)
+            except:
+                eval = "nan"
+            if str(eval) != 'nan':
+                evaluatedValuesList.append(eval)
+            else:
+                evaluatedValuesList.append(0)
+        evaluatedDF['Formula ' + str(formulaNo)] = evaluatedValuesList
+        formulaNo = formulaNo + 1
+    evaluatedDF.index = df.index
+    return evaluatedDF
