@@ -12,12 +12,12 @@ from concurrent.futures import ThreadPoolExecutor
 iValues = {"daily" : '1', "weekly" : '7', "monthly" : '30', "hourly" : '-3600000', "realtime" : '-300000'}
 measures = {'uniques' : 'uniques', 'event totals' : 'totals', 'active %' : 'pct_dau', 'average' : 'average'}
 dfList = []
-keyFile = open(r'./.secret/api_keys.txt','r')
-keys = keyFile.read().split('\n')
-keyFile.close()
-themeFile = open(r'./themeConfig.json','r')
-themeJson = json.load(themeFile)
-themeFile.close()
+with open(r'./.secret/api_keys.txt','r') as keyFile:
+    keys = keyFile.read().split('\n')
+    keyFile.close()
+with open(r'./themeConfig.json','r') as themeFile:
+    themeJson = json.load(themeFile)
+    themeFile.close()
 
 def apiCall(inputJson, HTTPString, errorString, eventNo, formula=''):
     global dfList
