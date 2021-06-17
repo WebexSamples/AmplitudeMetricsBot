@@ -25,7 +25,6 @@ def apiCall(inputJson, HTTPString, errorString, eventNo, formula=''):
     response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
     if str(response) != '<Response [200]>':
         dfList.append('API call Failed')
-        print(formula, response.json())
         return
     response_json = response.json()
     if 'error' in response_json:
