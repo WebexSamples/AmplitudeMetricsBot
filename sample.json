@@ -3,10 +3,12 @@
     "body": {
       "measures": "Uniques/ Event totals/ Active %/ Average/ Frequency/Properties/ Formula",
       "chart_type": "bar/line/stacked bar/ stacked area",
+      "plot_title":"A title for plot",
       "interval": "realtime/ hourly/ daily/ weekly/ monthly/quarterly",
       "interval_range": "<an_integer_value>",
+      "between_dates":"yyyyMMdd-yyyyMMdd",
       "repeat": true,
-      "repeat_interval": "daily/weekly/monthly",
+      "repeat_interval": "crontab format interval",
       "alerts": true, 
       "events": [
         {
@@ -79,6 +81,10 @@
       "thresholds": [
           "A + B <= 60",
           "A - B > 70"
+      ],
+      "formulas": [
+        "(TOTALS(A) + UNIQUES(B))/(TOTALS(C)/2)",
+        "AVG(A)"
       ]
     }
   }

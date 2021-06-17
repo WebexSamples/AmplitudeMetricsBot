@@ -25,6 +25,7 @@ def apiCall(inputJson, HTTPString, errorString, eventNo, formula=''):
     response = requests.get(HTTPString, auth = HTTPBasicAuth(keys[0], keys[1]))
     if str(response) != '<Response [200]>':
         dfList.append('API call Failed')
+        print(formula, response.json())
         return
     response_json = response.json()
     if 'error' in response_json:
@@ -34,7 +35,7 @@ def apiCall(inputJson, HTTPString, errorString, eventNo, formula=''):
     if not (tempDF.empty):
         if (response_json['data']['seriesLabels'] != [0] and response_json['data']['seriesLabels'][0] != ''):
             tempDF.columns = [el[1] for el in response_json['data']['seriesLabels']]
-        if interval in ['1','7']:
+        if interval in ['1','7','30']:
             tempDF = tempDF.rename(index = lambda x: x.split('T')[0])
         else:
             tempDF = tempDF.rename(index = lambda x: x.split('T')[1])
@@ -52,6 +53,11 @@ def apiCall(inputJson, HTTPString, errorString, eventNo, formula=''):
             tempDF = tempDF.rename(columns = lambda x: formula.split()[0] + '(' + chr(eventNo + 65) + '), ' + formula.split()[-1])
         else:
             tempDF = tempDF.rename(columns = lambda x: formula + '(' + chr(eventNo + 65) + ')')
+        if ':' in tempDF.index[0] and inputJson['body']['interval_range'][-1] == 'h':
+            if inputJson['body']['interval'].lower() == 'hourly':
+                tempDF = tempDF.tail(int(inputJson['body']['interval_range'][:-1]))
+            elif inputJson['body']['interval'].lower() == 'realtime':
+                tempDF = tempDF.tail(int(inputJson['body']['interval_range'][:-1])*12)
         dfList.append(tempDF)
 
 async def getDFListAsynchronously(inputJson, parameter_plot = 'events'):
@@ -64,21 +70,21 @@ async def getDFListAsynchronously(inputJson, parameter_plot = 'events'):
     eventNo = 0
     endDate = str(datetime.now().date()).replace('-','')
     if (interval == '-3600000' or interval == '-300000'):
-        startDate = endDate
-    else:
+        startDate = str((datetime.now() - timedelta(2)).date()).replace('-','')
+    elif 'interval_range' in inputJson['body']:
         endVal = inputJson['body']['interval_range'][-1]
         if (endVal == 'd'):
             startDate = str((datetime.now() + timedelta(-int(inputJson['body']['interval_range'][:-1]) + 1)).date()).replace('-','')
         elif (endVal == 'w'):
             startDate = str((datetime.now() + timedelta(-(int(inputJson['body']['interval_range'][:-1]) * 7) + 1)).date()).replace('-','')
         elif (endVal == 'm'):
-            startDate = str((datetime.now() + timedelta(-(int(inputJson['body']['interval_range'][:-1]) * 30) + 1)).date()).replace('-','')
+            startDate = str((datetime.now() + timedelta(-(int(inputJson['body']['interval_range'][:-1]) * 30))).date()).replace('-','')
         else:
             startDate = endDate
-    if inputJson['body']['between_dates'] != '' and not(inputJson['body']['repeat']) and not(inputJson['body']['alerts']):
+    if 'between_dates' in inputJson['body'] and not(inputJson['body']['repeat']) and not(inputJson['body']['alerts']):
         (startDate, endDate) = [date.strip() for date in inputJson['body']['between_dates'].split('-')]
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         with requests.Session() as session:
             loop = asyncio.get_event_loop()
             tasks = []
@@ -114,7 +120,7 @@ def getErrorPlots(inputJsonFileName):
     chartType = inputJson['body']['chart_type']
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    if len(inputJson['body']['formulas']) > 0:
+    if 'formulas' in inputJson['body'] and inputJson['body']['measures'].lower() == 'formula':
         future = asyncio.ensure_future(getDFListAsynchronously(inputJson, parameter_plot = 'formula'))
     else:
         future = asyncio.ensure_future(getDFListAsynchronously(inputJson, parameter_plot = 'events'))
@@ -127,7 +133,7 @@ def getErrorPlots(inputJsonFileName):
             df = dataframe
         else:
             df = df.join(dataframe)
-    if len(inputJson['body']['formulas']) > 0:
+    if 'formulas' in inputJson['body']:
         df = formulaEvaluator(df, inputJson['body']['formulas'])
     else:
         df = df.reindex(sorted(df.columns), axis=1)
@@ -169,7 +175,7 @@ def getErrorPlots(inputJsonFileName):
     sns.despine(left=True, bottom=True)
     ax.figure.autofmt_xdate()
     plt.xlabel(xlabel, **csfont)
-    if len(inputJson['body']['formulas']):
+    if 'formulas' in inputJson['body']:
         plt.ylabel(inputJson['body']['plot_title'].title(), **csfont)
     else:
         plt.ylabel(inputJson['body']['measures'].title(), **csfont)
@@ -189,7 +195,7 @@ def autolabelbar(rects, ax, stacked=False):
     for rect in rects:
         height = rect.get_height()
         label_position = ((rect.get_y() + height / 2) - (y_height * 0.01)) if stacked else height + (y_height * 0.01)
-        if height:
+        if int(height):
             t = ax.text(rect.get_x() + rect.get_width()/2., label_position,
                 str(int(height)),
                 ha='center', va='bottom', in_layout=True, alpha=0.7)
@@ -224,16 +230,17 @@ def CheckAlertStatus(inputJsonFileName):
             if operators[operatorIndex] in threshold:
                 expr = [ i.strip() for i in threshold.split(operators[operatorIndex])]
                 eval = cexprtk.evaluate_expression(expr[0], valuesDict)
-
-                if eval <= int(expr[1]) and operatorIndex == 0:
+                if str(eval) == 'nan' or str(eval) == 'inf':
+                    eval = 0
+                if eval <= float(expr[1]) and operatorIndex == 0:
                     thresholdsTriggered.append((threshold, eval))
-                elif eval >= int(expr[1]) and operatorIndex == 1:
+                elif eval >= float(expr[1]) and operatorIndex == 1:
                     thresholdsTriggered.append((threshold, eval))
-                elif eval == int(expr[1]) and operatorIndex == 2:
+                elif eval == float(expr[1]) and operatorIndex == 2:
                     thresholdsTriggered.append((threshold, eval))
-                elif eval < int(expr[1]) and operatorIndex == 3:
+                elif eval < float(expr[1]) and operatorIndex == 3:
                     thresholdsTriggered.append((threshold, eval))
-                elif eval > int(expr[1]) and operatorIndex == 4:
+                elif eval > float(expr[1]) and operatorIndex == 4:
                     thresholdsTriggered.append((threshold, eval))
                 break
     return thresholdsTriggered
@@ -260,6 +267,7 @@ def formulaEvaluator(df, formulas):
     valuesDict = {}
     formulaNo = 1
     for formula in formulas:
+        tempFormula = formula
         evaluatedValuesList = []
         for index in range(len(df.index)):
             ascii = 65
@@ -272,7 +280,7 @@ def formulaEvaluator(df, formulas):
                 eval = cexprtk.evaluate_expression(formula, valuesDict)
             except:
                 eval = "nan"
-            if str(eval) != 'nan':
+            if str(eval) != 'nan' and str(eval) != 'inf':
                 evaluatedValuesList.append(eval)
             else:
                 evaluatedValuesList.append(0)
