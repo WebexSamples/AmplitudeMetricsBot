@@ -141,16 +141,15 @@ def respond_to_file(files= None, room_id= None, message = None):
         requestString = "You can request access by using the command \n\"request acceess for <email>\"\nOR\n\"request access for all\""
         reply_message(room_id=room_id, message= messageSent.json(), reply= requestString)
         return
-    
+
     reply_message(room_id=room_id, message= messageSent.json(), reply='You will receive response if the Input is correct')
 
     jsonname = room_id + response.headers['Content-Disposition'].split('"')[1::1][0]
     with open(jsonname, "wb") as newFile:
         newFile.write(response.content)
     appendPlotJob(jsonname)
-    flag1 = True
-    flag2 = 0
-    while(flag1):
+    flag = 0
+    while(flag != 2):
         with open('JobQueue.txt', 'r') as queueFile:
             currentFile = queueFile.readlines()
             if len(currentFile):
@@ -158,11 +157,9 @@ def respond_to_file(files= None, room_id= None, message = None):
             else:
                 currentFile = ''
             if currentFile == jsonname:
-                flag2 = 1
+                flag = 1
             if (currentFile != jsonname) and flag2 == 1:
-                flag2 = 2
-            if flag2 == 2:
-                flag1 = False
+                flag = 2
             time.sleep(1)
         queueFile.close()
     resultPlot = (jsonname[:-5] + 'plot.png') if isFileNewerThan(str(jsonname[:-5] + 'plot.png'), timedelta(seconds = 30)) else 'API call Failed'
@@ -342,9 +339,8 @@ def repeat_response(filename=None, room_id = None, objectId = None):
     reply_message(room_id=room_id, message= message.json(), reply='You will receive response if the Input is correct')
 
     appendPlotJob(jsonname)
-    flag1 = True
-    flag2 = 0
-    while(flag1):
+    flag = 0
+    while(flag != 2):
         with open('JobQueue.txt', 'r') as queueFile:
             currentFile = queueFile.readlines()
             if len(currentFile):
@@ -352,11 +348,9 @@ def repeat_response(filename=None, room_id = None, objectId = None):
             else:
                 currentFile = ''
             if currentFile == jsonname:
-                flag2 = 1
+                flag = 1
             if (currentFile != jsonname) and flag2 == 1:
-                flag2 = 2
-            if flag2 == 2:
-                flag1 = False
+                flag = 2
             time.sleep(1)
         queueFile.close()
     resultPlot = (jsonname[:-5] + 'plot.png') if isFileNewerThan(str(jsonname[:-5] + 'plot.png'), timedelta(seconds = 30)) else 'API call Failed'
@@ -474,9 +468,8 @@ def alert_response(filename = None, room_id = None, objectId = None, inputJson =
             reply_message(room_id=room_id,message= messageThread.json(), reply ="Threshold "+ thresholdString + " was crossed with value " + str(response[1]))
 
         appendPlotJob(jsonname)
-        flag1 = True
-        flag2 = 0
-        while(flag1):
+        flag = 0
+        while(flag != 2):
             with open('JobQueue.txt', 'r') as queueFile:
                 currentFile = queueFile.readlines()
                 if len(currentFile):
@@ -484,15 +477,13 @@ def alert_response(filename = None, room_id = None, objectId = None, inputJson =
                 else:
                     currentFile = ''
                 if currentFile == jsonname:
-                    flag2 = 1
+                    flag = 1
                 if (currentFile != jsonname) and flag2 == 1:
-                    flag2 = 2
-                if flag2 == 2:
-                    flag1 = False
+                    flag = 2
                 time.sleep(1)
             queueFile.close()
         resultPlot = (jsonname[:-5] + 'plot.png') if isFileNewerThan(str(jsonname[:-5] + 'plot.png'), timedelta(seconds = 30)) else 'API call Failed'
-
+        
         if resultPlot == 'API call Failed':
             reply_message(room_id=room_id, message= messageSent.json(), reply='API call error occurred, please re-check the input JSON')
         else:
