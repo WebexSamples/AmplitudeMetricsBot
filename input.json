@@ -10,6 +10,7 @@
     "repeat": false,
     "repeat_interval": "daily",
     "alerts": true,
+    "chart_url": "",
     "events": [
       {
         "event_type": "client_ecm_add_account_funnel"
