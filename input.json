@@ -3,14 +3,13 @@
   "body": {
     "plot_title": "",
     "measures": "uniques",
-    "chart_type": "stacked bar",
+    "chart_type": "line",
     "interval": "daily",
     "interval_range": "365d",
     "between_dates": "20210228 - 20210310",
     "repeat": false,
     "repeat_interval": "daily",
     "alerts": true,
-    "chart_url": "",
     "events": [
       {
         "event_type": "client_ecm_add_account_funnel"
@@ -22,9 +21,6 @@
     "thresholds": [
       "A + B >= 60",
       "A - B < 70"
-    ],
-    "formulas": [
-      "TOTALS(A) + UNIQUES(B)"
     ]
   }
 }

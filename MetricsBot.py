@@ -3,10 +3,12 @@
 from python_webex.v1.Bot import Bot
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 import requests
-from AmplitudeInteraction import getErrorPlots, CheckAlertStatus
+from AmplitudeInteraction import CheckAlertStatus, appendPlotJob
 import json
 import time
+from datetime import datetime,timedelta
 import pymongo
+import os.path
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.mongodb import MongoDBJobStore
@@ -139,13 +141,32 @@ def respond_to_file(files= None, room_id= None, message = None):
         requestString = "You can request access by using the command \n\"request acceess for <email>\"\nOR\n\"request access for all\""
         reply_message(room_id=room_id, message= messageSent.json(), reply= requestString)
         return
-        
-    reply_message(room_id=room_id, message= messageSent.json(), reply='You will receive response if the Input is correct')
     
+    reply_message(room_id=room_id, message= messageSent.json(), reply='You will receive response if the Input is correct')
+
     jsonname = room_id + response.headers['Content-Disposition'].split('"')[1::1][0]
     with open(jsonname, "wb") as newFile:
         newFile.write(response.content)
-    resultPlot = getErrorPlots(jsonname)
+    appendPlotJob(jsonname)
+    flag1 = True
+    flag2 = 0
+    while(flag1):
+        with open('JobQueue.txt', 'r') as queueFile:
+            currentFile = queueFile.readlines()
+            if len(currentFile):
+                currentFile = currentFile[0].strip()
+            else:
+                currentFile = ''
+            if currentFile == jsonname:
+                flag2 = 1
+            if (currentFile != jsonname) and flag2 == 1:
+                flag2 = 2
+            if flag2 == 2:
+                flag1 = False
+            time.sleep(1)
+        queueFile.close()
+    resultPlot = (jsonname[:-5] + 'plot.png') if isFileNewerThan(str(jsonname[:-5] + 'plot.png'), timedelta(seconds = 30)) else 'API call Failed'
+
     if resultPlot == 'API call Failed':
         reply_message(room_id=room_id, message= messageSent.json(), reply='API call error occurred, please re-check the input JSON')
     else:
@@ -178,7 +199,7 @@ def respond_to_file(files= None, room_id= None, message = None):
             add_to_db(room_id=room_id, inputJson=inputJson, filename= jsonname, messageSender = message['personEmail'], isRepeat= True)
         if inputJson['body']['alerts'] == True and len(inputJson['body']['thresholds']) > 0:
             add_to_db(room_id=room_id, inputJson=inputJson, filename= jsonname, messageSender = message['personEmail'], isRepeat= False)
-            
+
 
 def help_user(room_id=None):
     messageString = """
@@ -205,7 +226,7 @@ def plotMessage(roomid, plotName, text, parentid):
 
 def checkUsers(room_id):
     memberURL = "https://webexapis.com/v1/memberships?roomId="
-    response = requests.get(memberURL + room_id, 
+    response = requests.get(memberURL + room_id,
                 headers={'Authorization': 'Bearer '+auth_token})
     itemList = response.json()['items']
     userString = ""
@@ -319,8 +340,27 @@ def repeat_response(filename=None, room_id = None, objectId = None):
         return
 
     reply_message(room_id=room_id, message= message.json(), reply='You will receive response if the Input is correct')
-    
-    resultPlot = getErrorPlots(filename)
+
+    appendPlotJob(jsonname)
+    flag1 = True
+    flag2 = 0
+    while(flag1):
+        with open('JobQueue.txt', 'r') as queueFile:
+            currentFile = queueFile.readlines()
+            if len(currentFile):
+                currentFile = currentFile[0].strip()
+            else:
+                currentFile = ''
+            if currentFile == jsonname:
+                flag2 = 1
+            if (currentFile != jsonname) and flag2 == 1:
+                flag2 = 2
+            if flag2 == 2:
+                flag1 = False
+            time.sleep(1)
+        queueFile.close()
+    resultPlot = (jsonname[:-5] + 'plot.png') if isFileNewerThan(str(jsonname[:-5] + 'plot.png'), timedelta(seconds = 30)) else 'API call Failed'
+
     if resultPlot == 'API call Failed':
         reply_message(room_id=room_id, message= message.json(), reply='API call error occurred, please re-check the input JSON')
     else:
@@ -387,7 +427,7 @@ def cancel_job(jobDetails: None, room_id= None, message = None):
         metricsBot.send_message(room_id=room_id, text=" You will receive no furter updates regarding Job " + jobID)
     else:
         metricsBot.send_message(room_id=room_id, text="Only "+ jobDoc['jobOwner'] + " is allowed to remove job " + jobID)
-    
+
 
 def reply_message(room_id = None, message= None, reply = None):
     encodedMessage = MultipartEncoder({'roomId': room_id,
@@ -432,8 +472,27 @@ def alert_response(filename = None, room_id = None, objectId = None, inputJson =
                     thresholdString += char.upper()
             print("Threshold \""+ thresholdString + "\" was crossed with value " + str(response[1]))
             reply_message(room_id=room_id,message= messageThread.json(), reply ="Threshold "+ thresholdString + " was crossed with value " + str(response[1]))
-        
-        resultPlot = getErrorPlots(filename)
+
+        appendPlotJob(jsonname)
+        flag1 = True
+        flag2 = 0
+        while(flag1):
+            with open('JobQueue.txt', 'r') as queueFile:
+                currentFile = queueFile.readlines()
+                if len(currentFile):
+                    currentFile = currentFile[0].strip()
+                else:
+                    currentFile = ''
+                if currentFile == jsonname:
+                    flag2 = 1
+                if (currentFile != jsonname) and flag2 == 1:
+                    flag2 = 2
+                if flag2 == 2:
+                    flag1 = False
+                time.sleep(1)
+            queueFile.close()
+        resultPlot = (jsonname[:-5] + 'plot.png') if isFileNewerThan(str(jsonname[:-5] + 'plot.png'), timedelta(seconds = 30)) else 'API call Failed'
+
         if resultPlot == 'API call Failed':
             reply_message(room_id=room_id, message= messageSent.json(), reply='API call error occurred, please re-check the input JSON')
         else:
@@ -565,3 +624,9 @@ def send_message_to_email(email= None, message = None):
     response = requests.post('https://webexapis.com/v1/messages', data=encodedMessage,
                         headers={'Authorization': 'Bearer ' + auth_token,
                         'Content-Type': encodedMessage.content_type})
+def isFileNewerThan(file, delta):
+    cutoff = datetime.utcnow() - delta
+    mtime = datetime.utcfromtimestamp(os.path.getmtime(file))
+    if mtime > cutoff:
+        return True
+    return False
