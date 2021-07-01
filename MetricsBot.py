@@ -434,7 +434,7 @@ def reply_message(room_id = None, message= None, reply = None):
 
 def call_alert_scheduler(objectId: None, filename = None, messageSender = None, inputJson = None):
     query = db.things.find_one({"_id": ObjectId(objectId)})
-    interval = "*/1 * * * *"
+    interval = "*/30 * * * *"
     try:
         jobID = sched.add_job(alert_response,CronTrigger.from_crontab(interval, timezone='UTC') ,args=(filename,query['roomID'], objectId, inputJson), misfire_grace_time= 180, jitter = 60)
     except ValueError:
