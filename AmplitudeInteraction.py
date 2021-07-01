@@ -287,3 +287,8 @@ def formulaEvaluator(df, formulas):
         formulaNo = formulaNo + 1
     evaluatedDF.index = df.index
     return evaluatedDF
+
+def appendPlotJob(inputJsonFileName):
+    with open('JobQueue.txt', 'a') as queueFile:
+        queueFile.write(inputJsonFileName + '\n')
+        queueFile.close()
