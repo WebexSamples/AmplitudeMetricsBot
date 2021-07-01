@@ -22,7 +22,7 @@ from EventCard import eventCard
 from EventCard2 import eventCard2
 from EventCard3 import eventCard3
 
-bot_url = "http://f0df72e08966.eu.ngrok.io"
+bot_url = "http://c87ffde0ea45.eu.ngrok.io"
 
 with open(r'./.secret/api_keys.txt','r') as keyFile:
     keys = keyFile.read().split('\n')
@@ -158,7 +158,7 @@ def respond_to_file(files= None, room_id= None, message = None):
                 currentFile = ''
             if currentFile == jsonname:
                 flag = 1
-            if (currentFile != jsonname) and flag2 == 1:
+            if (currentFile != jsonname) and flag == 1:
                 flag = 2
             time.sleep(1)
         queueFile.close()
@@ -338,7 +338,7 @@ def repeat_response(filename=None, room_id = None, objectId = None):
 
     reply_message(room_id=room_id, message= message.json(), reply='You will receive response if the Input is correct')
 
-    appendPlotJob(jsonname)
+    appendPlotJob(filename)
     flag = 0
     while(flag != 2):
         with open('JobQueue.txt', 'r') as queueFile:
@@ -347,13 +347,13 @@ def repeat_response(filename=None, room_id = None, objectId = None):
                 currentFile = currentFile[0].strip()
             else:
                 currentFile = ''
-            if currentFile == jsonname:
+            if currentFile == filename:
                 flag = 1
-            if (currentFile != jsonname) and flag2 == 1:
+            if (currentFile != filename) and flag == 1:
                 flag = 2
             time.sleep(1)
         queueFile.close()
-    resultPlot = (jsonname[:-5] + 'plot.png') if isFileNewerThan(str(jsonname[:-5] + 'plot.png'), timedelta(seconds = 30)) else 'API call Failed'
+    resultPlot = (filename[:-5] + 'plot.png') if isFileNewerThan(str(filename[:-5] + 'plot.png'), timedelta(seconds = 30)) else 'API call Failed'
 
     if resultPlot == 'API call Failed':
         reply_message(room_id=room_id, message= message.json(), reply='API call error occurred, please re-check the input JSON')
@@ -434,7 +434,7 @@ def reply_message(room_id = None, message= None, reply = None):
 
 def call_alert_scheduler(objectId: None, filename = None, messageSender = None, inputJson = None):
     query = db.things.find_one({"_id": ObjectId(objectId)})
-    interval = "*/30 * * * *"
+    interval = "*/1 * * * *"
     try:
         jobID = sched.add_job(alert_response,CronTrigger.from_crontab(interval, timezone='UTC') ,args=(filename,query['roomID'], objectId, inputJson), misfire_grace_time= 180, jitter = 60)
     except ValueError:
@@ -467,7 +467,7 @@ def alert_response(filename = None, room_id = None, objectId = None, inputJson =
             print("Threshold \""+ thresholdString + "\" was crossed with value " + str(response[1]))
             reply_message(room_id=room_id,message= messageThread.json(), reply ="Threshold "+ thresholdString + " was crossed with value " + str(response[1]))
 
-        appendPlotJob(jsonname)
+        appendPlotJob(filename)
         flag = 0
         while(flag != 2):
             with open('JobQueue.txt', 'r') as queueFile:
@@ -476,14 +476,14 @@ def alert_response(filename = None, room_id = None, objectId = None, inputJson =
                     currentFile = currentFile[0].strip()
                 else:
                     currentFile = ''
-                if currentFile == jsonname:
+                if currentFile == filename:
                     flag = 1
-                if (currentFile != jsonname) and flag2 == 1:
+                if (currentFile != filename) and flag == 1:
                     flag = 2
                 time.sleep(1)
             queueFile.close()
-        resultPlot = (jsonname[:-5] + 'plot.png') if isFileNewerThan(str(jsonname[:-5] + 'plot.png'), timedelta(seconds = 30)) else 'API call Failed'
-        
+        resultPlot = (filename[:-5] + 'plot.png') if isFileNewerThan(str(filename[:-5] + 'plot.png'), timedelta(seconds = 30)) else 'API call Failed'
+
         if resultPlot == 'API call Failed':
             reply_message(room_id=room_id, message= messageSent.json(), reply='API call error occurred, please re-check the input JSON')
         else:
